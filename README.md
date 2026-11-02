@@ -18,4 +18,7 @@ because the existing slop coded ones are literally unusable
 
 `yarn && yarn start` → http://localhost:3001
 
-Select something, press **G**, move/rotate/resize it, press **G** again. That's one animation; it starts at 0s. Play/pause/restart from the bar at the bottom; the ▲ opens the timeline, where clips can be dragged in time, renamed or deleted. Code lives in `packages/excalidraw/animation/`.
+- Select something, press **G** (or ● in the bottom bar), move/rotate/resize it, press **G** again. That's one clip; it starts at 0s.
+- The bottom bar plays, pauses and restarts. The film icon opens the editor: clips on the left, timeline on the right. Drag a clip to move it in time; drag its edges to stretch or squeeze it.
+- In the editor each clip's motion path shows as a dashed line. It's a normal Excalidraw line: bend it, add points, alt-drag to copy it, and drop its start point on another object to make that object follow it. Paths are hidden outside the editor and never exported.
+- Undo covers clip edits too. Code lives in `packages/excalidraw/animation/`.

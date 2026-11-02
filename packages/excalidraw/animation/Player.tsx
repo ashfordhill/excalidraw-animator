@@ -1,44 +1,63 @@
 import clsx from "clsx";
-import React, { useLayoutEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 
 import { useApp } from "../components/App";
 
 import {
   deleteClip,
-  isPreviewing,
-  moveClip,
+  getClips,
+  onEditorPointerUp,
+  onSceneUpdate,
   pause,
   play,
-  renameClip,
   seek,
   setDrawerOpen,
+  setPathsVisible,
   setScrubbing,
+  toggleRecording,
   totalDuration,
+  trackPaths,
+  updateClip,
   useAnimator,
+  useSceneNonce,
 } from "./animator";
 
 import "./Player.scss";
+
+import type { ClipElement } from "./animator";
 
 const svg = (d: React.ReactNode) => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
     {d}
   </svg>
 );
-export const recordIcon = svg(<circle cx="12" cy="12" r="6" />);
-export const timelineIcon = svg(
-  <path d="M3 6h18v2H3zm0 5h12v2H3zm0 5h16v2H3z" />,
-);
+const recordIcon = svg(<circle cx="12" cy="12" r="6" />);
+const stopIcon = svg(<rect x="6" y="6" width="12" height="12" rx="1" />);
 const playIcon = svg(<path d="M7 4l13 8-13 8z" />);
 const pauseIcon = svg(<path d="M6 4h4v16H6zm8 0h4v16h-4z" />);
 const restartIcon = svg(<path d="M5 4h2v16H5zm3 8l11-8v16z" />);
-const upIcon = svg(<path d="M12 7l7 8H5z" />);
-const downIcon = svg(<path d="M12 17l7-8H5z" />);
+const filmIcon = (
+  <svg
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" />
+  </svg>
+);
 
 const fmt = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
 
+type App = ReturnType<typeof useApp>;
+
 /** pointer-drag along an element, mapping the x position to a time */
 const scrubHandlers = (
-  app: ReturnType<typeof useApp>,
+  app: App,
   duration: number,
 ): React.HTMLAttributes<HTMLDivElement> => {
   const toTime = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -61,41 +80,54 @@ const scrubHandlers = (
   };
 };
 
-const Controls = () => {
-  const app = useApp();
-  const s = useAnimator();
-  return (
-    <>
-      <button title="Play from beginning" onClick={() => play(app, true)}>
-        {restartIcon}
-      </button>
-      <button
-        title={s.playing ? "Pause" : "Play"}
-        onClick={() => (s.playing ? pause() : play(app))}
-      >
-        {s.playing ? pauseIcon : playIcon}
-      </button>
-    </>
-  );
-};
+type Drag = { id: string; start: number; duration: number };
 
-const Timeline = () => {
+const Timeline = ({ clips }: { clips: ClipElement[] }) => {
   const app = useApp();
   const s = useAnimator();
-  const total = totalDuration(s.clips);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const total = totalDuration(clips);
   const view = Math.max(total * 1.25, 3000);
   const pct = (ms: number) => `${(ms / view) * 100}%`;
 
-  const dragClip = (e: React.PointerEvent, id: string, start: number) => {
+  /** move the clip, or stretch it from either edge (changes its speed) */
+  const startDrag = (
+    e: React.PointerEvent,
+    clip: ClipElement,
+    mode: "move" | "left" | "right",
+  ) => {
     e.stopPropagation();
-    const lane = (e.currentTarget as HTMLElement).parentElement!;
+    const { start, duration } = clip.customData.anim;
+    const lane = (e.currentTarget as HTMLElement).closest(".anim-lane")!;
     const width = lane.getBoundingClientRect().width;
     const x0 = e.clientX;
-    const move = (ev: PointerEvent) =>
-      moveClip(app, id, start + ((ev.clientX - x0) / width) * view);
+    let next: Drag = { id: clip.id, start, duration };
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const dt = ((ev.clientX - x0) / width) * view;
+      moved = moved || Math.abs(ev.clientX - x0) > 2;
+      if (mode === "move") {
+        next = { ...next, start: Math.max(0, start + dt) };
+      } else if (mode === "right") {
+        next = { ...next, duration: Math.max(50, duration + dt) };
+      } else {
+        const s2 = Math.max(0, Math.min(start + dt, start + duration - 50));
+        next = { ...next, start: s2, duration: start + duration - s2 };
+      }
+      setDrag(next);
+    };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      setDrag(null);
+      if (moved) {
+        updateClip(app, clip.id, {
+          start: Math.round(next.start),
+          duration: Math.round(next.duration),
+        });
+      } else {
+        app.setState({ selectedElementIds: { [clip.id]: true } });
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -114,59 +146,75 @@ const Timeline = () => {
   return (
     <div className="anim-timeline" {...scrubHandlers(app, view)}>
       <div className="anim-ruler">{ticks}</div>
-      {s.clips.map((c) => (
-        <div key={c.id} className="anim-lane">
-          <div
-            className="anim-bar"
-            style={{ left: pct(c.start), width: pct(c.duration) }}
-            onPointerDown={(e) => dragClip(e, c.id, c.start)}
-            title="Drag to move"
-          >
-            {c.name}
+      {clips.map((c) => {
+        const d = drag?.id === c.id ? drag : c.customData.anim;
+        return (
+          <div key={c.id} className="anim-lane">
+            <div
+              className={clsx("anim-bar", {
+                selected: app.state.selectedElementIds[c.id],
+              })}
+              style={{ left: pct(d.start), width: pct(d.duration) }}
+              onPointerDown={(e) => startDrag(e, c, "move")}
+              title={`${fmt(d.start)} → ${fmt(d.start + d.duration)}`}
+            >
+              <span
+                className="anim-bar__edge left"
+                onPointerDown={(e) => startDrag(e, c, "left")}
+              />
+              {c.customData.anim.name}
+              <span
+                className="anim-bar__edge right"
+                onPointerDown={(e) => startDrag(e, c, "right")}
+              />
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       <div className="anim-playhead" style={{ left: pct(s.time) }} />
     </div>
   );
 };
 
-const Drawer = () => {
-  const s = useAnimator();
+const ClipName = ({ clip }: { clip: ClipElement }) => {
+  const app = useApp();
+  const name = clip.customData.anim.name;
+  const [value, setValue] = useState(name);
+  useEffect(() => setValue(name), [name]);
+  const commit = () =>
+    value !== name && updateClip(app, clip.id, { name: value });
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      onFocus={() => app.setState({ selectedElementIds: { [clip.id]: true } })}
+    />
+  );
+};
+
+const Drawer = ({ clips }: { clips: ClipElement[] }) => {
+  const app = useApp();
   return (
     <div className="anim-drawer">
-      <div className="anim-drawer__header">
-        <Controls />
-        <span className="anim-time">
-          {fmt(s.time)} / {fmt(totalDuration(s.clips))}
-        </span>
-        <span style={{ flex: 1 }} />
-        <button title="Close timeline" onClick={() => setDrawerOpen(false)}>
-          {downIcon}
-        </button>
+      <div className="anim-list">
+        <div className="anim-list__spacer" />
+        {!clips.length && (
+          <div className="anim-empty">
+            Select something, press G (or ●), move it, press G again.
+          </div>
+        )}
+        {clips.map((c) => (
+          <div key={c.id} className="anim-list__item">
+            <ClipName clip={c} />
+            <button title="Delete" onClick={() => deleteClip(app, c.id)}>
+              ×
+            </button>
+          </div>
+        ))}
       </div>
-      <div className="anim-drawer__body">
-        <div className="anim-list">
-          <div className="anim-list__spacer" />
-          {!s.clips.length && (
-            <div className="anim-empty">
-              Select something, press G, move it, press G again.
-            </div>
-          )}
-          {s.clips.map((c) => (
-            <div key={c.id} className="anim-list__item">
-              <input
-                value={c.name}
-                onChange={(e) => renameClip(c.id, e.target.value)}
-              />
-              <button title="Delete" onClick={() => deleteClip(c.id)}>
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-        <Timeline />
-      </div>
+      <Timeline clips={clips} />
     </div>
   );
 };
@@ -174,29 +222,54 @@ const Drawer = () => {
 export const AnimationPlayer = () => {
   const app = useApp();
   const s = useAnimator();
-  const ref = useRef<HTMLDivElement>(null);
-  const preview = isPreviewing(s);
-  const total = totalDuration(s.clips);
+  useSceneNonce(app);
+  const clips = getClips(app);
+  const total = totalDuration(clips);
+  const editor = s.drawerOpen && !s.playing;
 
-  // preview mode: hide the editor UI and lock editing
+  // hide the editor UI (everything but the canvas and this player)
+  const hideUI = s.drawerOpen || s.playing || s.scrubbing;
   useLayoutEffect(() => {
-    if (!preview) {
+    if (!hideUI) {
       return;
     }
     // on <body>: React owns (and rewrites) the container's className
-    const container = app.ownerDocument.body;
+    const body = app.ownerDocument.body;
+    body.classList.add("anim-preview");
+    return () => body.classList.remove("anim-preview");
+  }, [hideUI, app]);
+
+  // while playing: lock editing
+  useLayoutEffect(() => {
+    if (!s.playing) {
+      return;
+    }
     const prevViewMode = app.state.viewModeEnabled;
-    container.classList.add("anim-preview");
     app.setState({
       viewModeEnabled: true,
       selectedElementIds: {},
       selectedGroupIds: {},
     });
+    return () => app.setState({ viewModeEnabled: prevViewMode });
+  }, [s.playing, app]);
+
+  // editor: motion paths are visible and editable
+  useLayoutEffect(() => {
+    setPathsVisible(app, editor);
+    if (!editor) {
+      return;
+    }
+    trackPaths(app);
+    const offUpdate = onSceneUpdate(app, () => trackPaths(app));
+    const offUp = app.onPointerUpEmitter.on(() =>
+      // let the gesture's own scene update land first
+      setTimeout(() => onEditorPointerUp(app)),
+    );
     return () => {
-      container.classList.remove("anim-preview");
-      app.setState({ viewModeEnabled: prevViewMode });
+      offUpdate();
+      offUp();
     };
-  }, [preview, app]);
+  }, [editor, app]);
 
   // drawer covers the bottom half: shift the view so the scene stays visible
   useLayoutEffect(() => {
@@ -209,29 +282,48 @@ export const AnimationPlayer = () => {
   }, [s.drawerOpen, app]);
 
   return (
-    <div className="anim-root" ref={ref}>
-      {s.drawerOpen ? (
-        <Drawer />
-      ) : (
-        <div className={clsx("anim-bar-mini", { recording: s.recording })}>
-          {s.recording ? (
-            <span className="anim-rec">● REC — press G to stop</span>
-          ) : (
-            <>
-              <Controls />
-              <div className="anim-scrub" {...scrubHandlers(app, total)}>
-                <div
-                  className="anim-scrub__fill"
-                  style={{ width: `${(s.time / total) * 100}%` }}
-                />
-              </div>
-              <button title="Open timeline" onClick={() => setDrawerOpen(true)}>
-                {upIcon}
-              </button>
-            </>
-          )}
+    <div className="anim-root">
+      {s.drawerOpen && <Drawer clips={clips} />}
+      <div className={clsx("anim-bar-mini", { recording: s.recording })}>
+        <button
+          className="anim-rec-btn"
+          title={s.recording ? "Stop recording — G" : "Record — G"}
+          onClick={() => toggleRecording(app)}
+          disabled={s.playing}
+        >
+          {s.recording ? stopIcon : recordIcon}
+        </button>
+        <button
+          title="Play from beginning"
+          onClick={() => play(app, true)}
+          disabled={s.recording}
+        >
+          {restartIcon}
+        </button>
+        <button
+          title={s.playing ? "Pause" : "Play"}
+          onClick={() => (s.playing ? pause() : play(app))}
+          disabled={s.recording}
+        >
+          {s.playing ? pauseIcon : playIcon}
+        </button>
+        <div className="anim-scrub" {...scrubHandlers(app, total)}>
+          <div
+            className="anim-scrub__fill"
+            style={{ width: `${(Math.min(s.time, total) / total) * 100}%` }}
+          />
         </div>
-      )}
+        <span className="anim-time">
+          {s.recording ? "REC" : fmt(Math.min(s.time, total))}
+        </span>
+        <button
+          className={clsx({ active: s.drawerOpen })}
+          title={s.drawerOpen ? "Close animation editor" : "Animation editor"}
+          onClick={() => setDrawerOpen(!s.drawerOpen)}
+        >
+          {filmIcon}
+        </button>
+      </div>
     </div>
   );
 };

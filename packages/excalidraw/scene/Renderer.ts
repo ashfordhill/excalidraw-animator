@@ -7,6 +7,7 @@ import {
 } from "@excalidraw/element";
 
 import { arrayToMap, memoize, toBrandedType } from "@excalidraw/common";
+import { isHiddenAnimPath } from "@excalidraw/element";
 
 import type {
   ExcalidrawElement,
@@ -252,7 +253,10 @@ export class Renderer {
     const newElementCanvasElement = newElement?.frameId ? null : newElement;
 
     for (const element of elements) {
-      if (newElementCanvasElement?.id === element.id) {
+      if (
+        newElementCanvasElement?.id === element.id ||
+        isHiddenAnimPath(element)
+      ) {
         continue;
       }
 

@@ -27,7 +27,7 @@ import {
   updateImageCache,
 } from "@excalidraw/element";
 
-import { newElementWith } from "@excalidraw/element";
+import { isAnimPath, newElementWith } from "@excalidraw/element";
 
 import { isFrameLikeElement } from "@excalidraw/element";
 
@@ -1366,6 +1366,13 @@ export function exportScene(
 export function exportScene(
   opts: ExportSceneOptions,
 ): Promise<HTMLCanvasElement | Blob | SVGSVGElement> {
+  opts = {
+    ...opts,
+    data: {
+      ...opts.data,
+      elements: opts.data.elements.filter((element) => !isAnimPath(element)),
+    },
+  };
   switch (opts.type) {
     case "canvas":
       return exportToCanvas(opts);

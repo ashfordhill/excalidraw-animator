@@ -14,6 +14,7 @@ import {
   isTextElement,
 } from "./typeChecks";
 import { getFrameChildren } from "./frame";
+import { isHiddenAnimPath } from "./animPath";
 
 import { isNonDeletedElement } from ".";
 
@@ -85,7 +86,7 @@ export const getElementsWithinSelection = <T extends ExcalidrawElement>(
   ] as Bounds;
 
   return elementsOverlappingBBox({
-    elements,
+    elements: elements.filter((element) => !isHiddenAnimPath(element)),
     bounds: selectionBounds,
     elementsMap,
     type: boxSelectionMode,

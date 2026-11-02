@@ -6,6 +6,9 @@ body.anim-preview .excalidraw {
 }
 
 .excalidraw {
+  $bar-zone: 64px;
+  $row: 28px;
+
   .anim-root {
     pointer-events: none;
     position: absolute;
@@ -28,12 +31,27 @@ body.anim-preview .excalidraw {
       &:hover {
         background: var(--button-hover-bg, rgba(0, 0, 0, 0.06));
       }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+
+      &.active {
+        background: var(
+          --color-surface-primary-container,
+          rgba(105, 101, 219, 0.15)
+        );
+        color: var(--color-primary);
+      }
     }
   }
 
+  // pinned: same spot whether the editor drawer is open or not
   .anim-bar-mini {
     pointer-events: auto;
     position: absolute;
+    z-index: 2;
     bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
@@ -44,23 +62,33 @@ body.anim-preview .excalidraw {
     background: var(--island-bg-color);
     box-shadow: var(--shadow-island);
     border-radius: var(--border-radius-lg);
-    // keep clear of zoom/undo (left) and help (right)
-    max-width: calc(100% - 520px);
 
     &.recording {
-      padding: 6px 12px;
+      box-shadow: 0 0 0 2px #e03131;
     }
   }
 
-  .anim-rec {
+  .anim-rec-btn svg {
     color: #e03131;
-    font-size: 0.8rem;
+  }
+
+  .anim-time {
+    min-width: 3.2rem;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary-color);
+    opacity: 0.7;
+  }
+
+  .anim-bar-mini.recording .anim-time {
+    color: #e03131;
     font-weight: 600;
+    opacity: 1;
   }
 
   .anim-scrub {
     position: relative;
-    width: 220px;
+    width: 200px;
     height: 20px;
     cursor: pointer;
 
@@ -93,34 +121,14 @@ body.anim-preview .excalidraw {
     bottom: 0;
     height: 45%;
     display: flex;
-    flex-direction: column;
+    overflow: auto;
+    padding-bottom: $bar-zone;
+    box-sizing: border-box;
     background: var(--island-bg-color);
     border-top: 1px solid var(--default-border-color);
     color: var(--text-primary-color);
     font-size: 0.8rem;
-
-    &__header {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 8px;
-      border-bottom: 1px solid var(--default-border-color);
-    }
-
-    &__body {
-      flex: 1;
-      display: flex;
-      overflow: auto;
-    }
   }
-
-  .anim-time {
-    margin-left: 8px;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.7;
-  }
-
-  $row: 28px;
 
   .anim-list {
     width: 220px;
@@ -189,8 +197,9 @@ body.anim-preview .excalidraw {
     position: absolute;
     top: 4px;
     bottom: 4px;
-    min-width: 6px;
-    padding: 0 6px;
+    min-width: 12px;
+    padding: 0 8px;
+    box-sizing: border-box;
     overflow: hidden;
     white-space: nowrap;
     line-height: 20px;
@@ -199,6 +208,27 @@ body.anim-preview .excalidraw {
     background: var(--color-primary);
     border-radius: 4px;
     cursor: grab;
+
+    &.selected {
+      box-shadow: 0 0 0 2px var(--color-primary-darker, #4a47b1);
+    }
+
+    &__edge {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      cursor: ew-resize;
+      background: rgba(255, 255, 255, 0.25);
+
+      &.left {
+        left: 0;
+      }
+
+      &.right {
+        right: 0;
+      }
+    }
   }
 
   .anim-playhead {
@@ -210,8 +240,4 @@ body.anim-preview .excalidraw {
     background: #e03131;
     pointer-events: none;
   }
-}
-
-.excalidraw .anim-record-btn svg {
-  color: #e03131;
 }

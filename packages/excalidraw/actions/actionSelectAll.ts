@@ -1,4 +1,4 @@
-import { getNonDeletedElements } from "@excalidraw/element";
+import { getNonDeletedElements, isHiddenAnimPath } from "@excalidraw/element";
 import { LinearElementEditor } from "@excalidraw/element";
 import { isLinearElement, isTextElement } from "@excalidraw/element";
 
@@ -33,6 +33,7 @@ export const actionSelectAll = register({
       .filter(
         (element) =>
           !element.isDeleted &&
+          !isHiddenAnimPath(element) &&
           !(isTextElement(element) && element.containerId) &&
           !element.locked,
       )
