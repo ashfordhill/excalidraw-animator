@@ -32,6 +32,8 @@ import {
   type ColorDefaultKey,
 } from "../actions/colorTargets";
 
+import { AnimationPlayer } from "../animation/Player";
+
 import { SelectedShapeActions, CompactShapeActions } from "./Actions";
 import { LoadingMessage } from "./LoadingMessage";
 import { MobileMenu } from "./MobileMenu";
@@ -654,6 +656,7 @@ const LayerUI = ({
           >
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
+            {defaultUIEnabled && <AnimationPlayer />}
             <Footer
               appState={appState}
               actionManager={actionManager}

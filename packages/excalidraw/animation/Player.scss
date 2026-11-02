@@ -1,0 +1,217 @@
+body.anim-preview .excalidraw {
+  .layer-ui__wrapper > :not(.anim-root),
+  .App-bottom-bar {
+    display: none !important;
+  }
+}
+
+.excalidraw {
+  .anim-root {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+
+    button {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      border-radius: var(--border-radius-md, 6px);
+      background: transparent;
+      color: var(--text-primary-color);
+      cursor: pointer;
+
+      &:hover {
+        background: var(--button-hover-bg, rgba(0, 0, 0, 0.06));
+      }
+    }
+  }
+
+  .anim-bar-mini {
+    pointer-events: auto;
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: var(--island-bg-color);
+    box-shadow: var(--shadow-island);
+    border-radius: var(--border-radius-lg);
+    // keep clear of zoom/undo (left) and help (right)
+    max-width: calc(100% - 520px);
+
+    &.recording {
+      padding: 6px 12px;
+    }
+  }
+
+  .anim-rec {
+    color: #e03131;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .anim-scrub {
+    position: relative;
+    width: 220px;
+    height: 20px;
+    cursor: pointer;
+
+    &::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 9px;
+      height: 2px;
+      background: var(--default-border-color);
+      pointer-events: none;
+    }
+
+    &__fill {
+      position: absolute;
+      left: 0;
+      top: 9px;
+      height: 2px;
+      background: var(--color-primary);
+      pointer-events: none;
+    }
+  }
+
+  .anim-drawer {
+    pointer-events: auto;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 45%;
+    display: flex;
+    flex-direction: column;
+    background: var(--island-bg-color);
+    border-top: 1px solid var(--default-border-color);
+    color: var(--text-primary-color);
+    font-size: 0.8rem;
+
+    &__header {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--default-border-color);
+    }
+
+    &__body {
+      flex: 1;
+      display: flex;
+      overflow: auto;
+    }
+  }
+
+  .anim-time {
+    margin-left: 8px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+  }
+
+  $row: 28px;
+
+  .anim-list {
+    width: 220px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--default-border-color);
+
+    &__spacer {
+      height: 20px;
+      border-bottom: 1px solid var(--default-border-color);
+    }
+
+    &__item {
+      display: flex;
+      align-items: center;
+      height: $row;
+      padding: 0 4px 0 8px;
+      border-bottom: 1px solid var(--default-border-color);
+
+      input {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        outline: none;
+      }
+    }
+  }
+
+  .anim-empty {
+    padding: 12px;
+    opacity: 0.6;
+  }
+
+  .anim-timeline {
+    position: relative;
+    flex: 1;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .anim-ruler {
+    position: relative;
+    height: 20px;
+    border-bottom: 1px solid var(--default-border-color);
+  }
+
+  .anim-tick {
+    position: absolute;
+    top: 3px;
+    padding-left: 3px;
+    border-left: 1px solid var(--default-border-color);
+    font-size: 0.7rem;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .anim-lane {
+    position: relative;
+    height: $row;
+    border-bottom: 1px solid var(--default-border-color);
+  }
+
+  .anim-bar {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    min-width: 6px;
+    padding: 0 6px;
+    overflow: hidden;
+    white-space: nowrap;
+    line-height: 20px;
+    font-size: 0.7rem;
+    color: #fff;
+    background: var(--color-primary);
+    border-radius: 4px;
+    cursor: grab;
+  }
+
+  .anim-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: #e03131;
+    pointer-events: none;
+  }
+}
+
+.excalidraw .anim-record-btn svg {
+  color: #e03131;
+}

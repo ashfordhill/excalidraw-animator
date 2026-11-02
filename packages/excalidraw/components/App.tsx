@@ -308,6 +308,7 @@ import {
   copyElementRenderOverrides,
   getElementRenderOffsets,
 } from "../renderOverrides";
+import { toggleRecording } from "../animation/animator";
 import { History } from "../history";
 import { defaultLang, getLanguage, languages, setLanguage, t } from "../i18n";
 
@@ -315,7 +316,6 @@ import {
   getScrollToContentState,
   getNormalizedZoom,
   getSelectedElements,
-  hasBackground,
   isSomeElementSelected,
 } from "../scene";
 import {
@@ -5164,6 +5164,18 @@ class App extends React.Component<AppProps, AppState> {
 
       if (!isInputLike(event.target)) {
         if (
+          event.key.toLowerCase() === KEYS.G &&
+          !event.shiftKey &&
+          !event.altKey &&
+          !event[KEYS.CTRL_OR_CMD]
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleRecording(this);
+          return;
+        }
+
+        if (
           (event.key === KEYS.ESCAPE || event.key === KEYS.ENTER) &&
           this.state.croppingElementId
         ) {
@@ -5537,11 +5549,7 @@ class App extends React.Component<AppProps, AppState> {
         event.preventDefault();
       }
 
-      if (
-        (event.key === KEYS.G || event.key === KEYS.S) &&
-        !event.altKey &&
-        !event[KEYS.CTRL_OR_CMD]
-      ) {
+      if (event.key === KEYS.S && !event.altKey && !event[KEYS.CTRL_OR_CMD]) {
         const selectedElements = this.scene.getSelectedElements(this.state);
         if (
           this.state.activeTool.type === "selection" &&
@@ -5550,14 +5558,6 @@ class App extends React.Component<AppProps, AppState> {
           return;
         }
 
-        if (
-          event.key === KEYS.G &&
-          (hasBackground(this.state.activeTool.type) ||
-            selectedElements.some((element) => hasBackground(element.type)))
-        ) {
-          this.setState({ openPopup: "elementBackground" });
-          event.stopPropagation();
-        }
         if (event.key === KEYS.S) {
           this.setState({ openPopup: "elementStroke" });
           event.stopPropagation();

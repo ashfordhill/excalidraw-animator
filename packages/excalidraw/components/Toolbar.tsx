@@ -6,6 +6,8 @@ import { KEYS } from "@excalidraw/common";
 import { useTunnels } from "../context/tunnels";
 import { t } from "../i18n";
 
+import { AnimationToolbarButtons } from "../animation/ToolbarButtons";
+
 import { useEditorInterface, useStylesPanelMode } from "./App";
 import { HintViewer } from "./HintViewer";
 import { Island } from "./Island";
@@ -320,6 +322,12 @@ export const Toolbar = ({
           setAppState={setAppState}
           UIOptions={UIOptions}
         />
+
+        <div
+          className="App-toolbar__divider"
+          style={{ marginLeft: "0.25rem" }}
+        />
+        <AnimationToolbarButtons />
       </Stack.Row>
     </Island>
   );

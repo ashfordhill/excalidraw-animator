@@ -13,3 +13,9 @@ because the existing slop coded ones are literally unusable
   - <img width="450" alt="image" src="https://github.com/user-attachments/assets/f6e21e3f-68bd-4422-a821-af98058dabd6" />
 
  lipstick on a pig smh
+
+## Usage
+
+`yarn && yarn start` → http://localhost:3001
+
+Select something, press **G**, move/rotate/resize it, press **G** again. That's one animation; it starts at 0s. Play/pause/restart from the bar at the bottom; the ▲ opens the timeline, where clips can be dragged in time, renamed or deleted. Code lives in `packages/excalidraw/animation/`.
