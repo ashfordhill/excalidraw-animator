@@ -7,7 +7,8 @@ body.anim-preview .excalidraw {
 
 .excalidraw {
   $bar-zone: 64px;
-  $row: 28px;
+  $row: 30px;
+  $ruler-height: 24px;
 
   .anim-root {
     pointer-events: none;
@@ -68,16 +69,47 @@ body.anim-preview .excalidraw {
     }
   }
 
-  .anim-rec-btn svg {
-    color: #e03131;
+  .anim-rec-btn {
+    position: relative;
+
+    svg {
+      color: #e03131;
+    }
+
+    // small Excalidraw-style tooltip so the R shortcut is discoverable
+    &::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 9px);
+      left: 50%;
+      transform: translateX(-50%) translateY(2px);
+      padding: 5px 9px;
+      border-radius: 7px;
+      background: var(--popup-bg-color);
+      color: var(--text-primary-color);
+      box-shadow: var(--shadow-island);
+      font-size: 0.72rem;
+      font-weight: 500;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    &:hover::after,
+    &:focus-visible::after {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
   }
 
   .anim-time {
-    min-width: 3.2rem;
-    font-size: 0.75rem;
+    min-width: 3.4rem;
+    font-size: 0.8rem;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary-color);
-    opacity: 0.7;
+    opacity: 0.9;
   }
 
   .anim-bar-mini.recording .anim-time {
@@ -88,7 +120,7 @@ body.anim-preview .excalidraw {
 
   .anim-scrub {
     position: relative;
-    width: 200px;
+    width: 220px;
     height: 20px;
     cursor: pointer;
 
@@ -98,7 +130,8 @@ body.anim-preview .excalidraw {
       left: 0;
       right: 0;
       top: 9px;
-      height: 2px;
+      height: 3px;
+      border-radius: 999px;
       background: var(--default-border-color);
       pointer-events: none;
     }
@@ -107,7 +140,8 @@ body.anim-preview .excalidraw {
       position: absolute;
       left: 0;
       top: 9px;
-      height: 2px;
+      height: 3px;
+      border-radius: 999px;
       background: var(--color-primary);
       pointer-events: none;
     }
@@ -127,24 +161,25 @@ body.anim-preview .excalidraw {
     background: var(--island-bg-color);
     border-top: 1px solid var(--default-border-color);
     color: var(--text-primary-color);
-    font-size: 0.8rem;
+    font-size: 0.875rem;
   }
 
   .anim-list {
-    width: 220px;
+    width: 260px;
     flex-shrink: 0;
     border-right: 1px solid var(--default-border-color);
 
     &__spacer {
-      height: 20px;
-      border-bottom: 1px solid var(--default-border-color);
+      height: $ruler-height;
+      background: var(--color-primary);
     }
 
     &__item {
       display: flex;
       align-items: center;
+      gap: 5px;
       height: $row;
-      padding: 0 4px 0 8px;
+      padding: 0 4px 0 9px;
       border-bottom: 1px solid var(--default-border-color);
 
       input {
@@ -154,36 +189,90 @@ body.anim-preview .excalidraw {
         background: transparent;
         color: inherit;
         font: inherit;
+        font-size: 0.83rem;
+        font-weight: 500;
         outline: none;
+      }
+    }
+
+    &__actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+  }
+
+  .anim-list__item {
+    .anim-clone-btn,
+    .anim-delete-btn {
+      height: 22px;
+      border-radius: 999px;
+      box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.08);
+      font-size: 0.68rem;
+      font-weight: 700;
+      transition: background 120ms ease, transform 80ms ease;
+
+      &:active {
+        transform: translateY(1px);
+        box-shadow: none;
+      }
+    }
+
+    .anim-clone-btn {
+      width: auto;
+      padding: 0 9px;
+      background: var(--color-primary-light);
+      color: var(--color-primary-darkest);
+
+      &:hover {
+        background: var(--color-primary-light-darker);
+      }
+    }
+
+    .anim-delete-btn {
+      width: 24px;
+      padding: 0;
+      background: var(--color-danger-icon-background);
+      color: var(--color-danger-icon-color);
+
+      &:hover {
+        background: var(--color-danger-background);
+        color: var(--color-danger-darker);
       }
     }
   }
 
   .anim-empty {
     padding: 12px;
-    opacity: 0.6;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    opacity: 0.75;
   }
 
   .anim-timeline {
     position: relative;
     flex: 1;
+    overflow: hidden;
     cursor: pointer;
     user-select: none;
   }
 
   .anim-ruler {
     position: relative;
-    height: 20px;
-    border-bottom: 1px solid var(--default-border-color);
+    height: $ruler-height;
+    background: var(--color-primary);
+    color: var(--color-icon-white);
   }
 
   .anim-tick {
     position: absolute;
-    top: 3px;
-    padding-left: 3px;
-    border-left: 1px solid var(--default-border-color);
-    font-size: 0.7rem;
-    opacity: 0.6;
+    top: 4px;
+    padding-left: 4px;
+    border-left: 1px solid currentColor;
+    font-size: 0.72rem;
+    font-weight: 600;
+    opacity: 0.9;
     pointer-events: none;
   }
 
@@ -195,18 +284,20 @@ body.anim-preview .excalidraw {
 
   .anim-bar {
     position: absolute;
-    top: 4px;
-    bottom: 4px;
-    min-width: 12px;
-    padding: 0 8px;
+    top: 5px;
+    bottom: 5px;
+    min-width: 16px;
+    padding: 0 9px;
     box-sizing: border-box;
     overflow: hidden;
     white-space: nowrap;
     line-height: 20px;
-    font-size: 0.7rem;
-    color: #fff;
-    background: var(--color-primary);
-    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-primary-darkest);
+    background: var(--color-primary-light);
+    border-radius: 6px;
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.06);
     cursor: grab;
 
     &.selected {
@@ -219,7 +310,8 @@ body.anim-preview .excalidraw {
       bottom: 0;
       width: 6px;
       cursor: ew-resize;
-      background: rgba(255, 255, 255, 0.25);
+      background: var(--color-primary);
+      opacity: 0.3;
 
       &.left {
         left: 0;
@@ -237,7 +329,26 @@ body.anim-preview .excalidraw {
     bottom: 0;
     width: 2px;
     margin-left: -1px;
-    background: #e03131;
+    background: var(--color-danger);
     pointer-events: none;
+  }
+
+  .anim-scroll-hint {
+    position: absolute;
+    right: 20px;
+    bottom: 64px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-gray-50);
+    font-size: 0.75rem;
+    font-weight: 500;
+    pointer-events: none;
+    user-select: none;
+
+    svg {
+      opacity: 0.9;
+    }
   }
 }

@@ -7,6 +7,7 @@ import {
   CaptureUpdateAction,
   LinearElementEditor,
   animPathVisibility,
+  duplicateElement,
   getElementBounds,
   getElementsInGroup,
   isAnimPath,
@@ -269,6 +270,12 @@ let rec: {
   unsubscribe: () => void;
 } | null = null;
 
+export const isRecording = () => Boolean(rec);
+
+/** whether there is a selected element that a new clip could record */
+export const hasRecordableSelection = (app: App) =>
+  app.scene.getSelectedElements(app.state).some((el) => !isAnimPath(el));
+
 const HOLD_GAP = 50;
 
 const sample = (app: App) => {
@@ -312,10 +319,13 @@ export const toggleRecording = (app: App) => {
     .filter((el) => !isAnimPath(el));
   if (!selected.length) {
     app.setState({
-      toast: { message: "Select something to animate, then press G" },
+      toast: { message: "Select something to animate, then press R" },
     });
     return;
   }
+  // recording always starts a new clip at 0s: bring the preview back to the
+  // first frame so the base pose (and playhead) match where the clip begins
+  seek(app, 0);
   rec = {
     t0: performance.now(),
     base: new Map(
@@ -566,6 +576,10 @@ export const pause = () => {
 export const setScrubbing = (scrubbing: boolean) => set({ scrubbing });
 export const setDrawerOpen = (drawerOpen: boolean) => set({ drawerOpen });
 
+/** in the editor only motion paths may be transformed; recording is exempt */
+export const isAnimEditorPathsOnly = () =>
+  state.drawerOpen && !state.playing && !state.scrubbing && !state.recording;
+
 export const setPathsVisible = (app: App, visible: boolean) => {
   if (animPathVisibility.visible === visible) {
     return;
@@ -608,6 +622,48 @@ export const updateClip = (app: App, id: string, patch: Partial<ClipData>) => {
 
 export const deleteClip = (app: App, id: string) =>
   updateClipElement(app, id, { isDeleted: true });
+
+/** duplicate a clip and place the copy right after the original */
+export const cloneClip = (app: App, id: string) => {
+  const clip = app.scene.getElement(id) as ClipElement | null;
+  if (!clip) {
+    return;
+  }
+  const data = clip.customData.anim;
+  const used = new Set(getClips(app).map((c) => c.customData.anim.name));
+  const baseName = data.name.replace(/ copy( \d+)?$/, "");
+  let name = `${baseName} copy`;
+  for (let i = 2; used.has(name); i++) {
+    name = `${baseName} copy ${i}`;
+  }
+  const copy = duplicateElement(
+    app.state.editingGroupId,
+    new Map(),
+    clip,
+    true,
+  );
+  const next: ClipElement = {
+    ...copy,
+    customData: {
+      ...copy.customData,
+      anim: {
+        ...data,
+        name,
+        start: data.start + data.duration,
+      },
+    },
+  };
+  app.updateScene({
+    elements: [...app.scene.getElementsIncludingDeleted(), next],
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  });
+  seen.set(next.id, next.version);
+  app.setState({
+    selectedElementIds: { [next.id]: true },
+    selectedGroupIds: {},
+    selectedLinearElement: null,
+  });
+};
 
 /**
  * after a pointer gesture that edited a path: if its start point was dropped
