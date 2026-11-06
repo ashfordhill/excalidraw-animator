@@ -308,6 +308,11 @@ export const IMAGE_MIME_TYPES = {
   jfif: "image/jfif",
 } as const;
 
+export const VIDEO_MIME_TYPES = {
+  webm: "video/webm",
+  mp4: "video/mp4",
+} as const;
+
 export const STRING_MIME_TYPES = {
   text: "text/plain",
   html: "text/html",
@@ -330,6 +335,8 @@ export const MIME_TYPES = {
   binary: "application/octet-stream",
   // image
   ...IMAGE_MIME_TYPES,
+  // video
+  ...VIDEO_MIME_TYPES,
 } as const;
 
 export const ALLOWED_PASTE_MIME_TYPES = [

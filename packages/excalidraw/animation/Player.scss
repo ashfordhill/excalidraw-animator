@@ -204,41 +204,23 @@ body.anim-preview .excalidraw {
   }
 
   .anim-list__item {
-    .anim-clone-btn,
-    .anim-delete-btn {
-      height: 22px;
-      border-radius: 999px;
-      box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.08);
-      font-size: 0.68rem;
-      font-weight: 700;
-      transition: background 120ms ease, transform 80ms ease;
-
-      &:active {
-        transform: translateY(1px);
-        box-shadow: none;
-      }
-    }
-
-    .anim-clone-btn {
-      width: auto;
-      padding: 0 9px;
-      background: var(--color-primary-light);
-      color: var(--color-primary-darkest);
-
-      &:hover {
-        background: var(--color-primary-light-darker);
-      }
-    }
-
-    .anim-delete-btn {
+    .anim-action-btn {
       width: 24px;
-      padding: 0;
-      background: var(--color-danger-icon-background);
-      color: var(--color-danger-icon-color);
+      height: 24px;
+      color: var(--icon-fill-color);
+      border-radius: var(--border-radius-md, 6px);
+
+      svg {
+        width: 15px;
+        height: 15px;
+      }
 
       &:hover {
-        background: var(--color-danger-background);
-        color: var(--color-danger-darker);
+        color: var(--color-primary);
+      }
+
+      &--danger:hover {
+        color: var(--color-danger);
       }
     }
   }
@@ -261,19 +243,30 @@ body.anim-preview .excalidraw {
   .anim-ruler {
     position: relative;
     height: $ruler-height;
+    overflow: hidden;
     background: var(--color-primary);
     color: var(--color-icon-white);
   }
 
   .anim-tick {
     position: absolute;
-    top: 4px;
-    padding-left: 4px;
+    top: 0;
+    bottom: 0;
     border-left: 1px solid currentColor;
-    font-size: 0.72rem;
-    font-weight: 600;
-    opacity: 0.9;
     pointer-events: none;
+
+    &--minor {
+      opacity: 0.28;
+    }
+
+    &--major {
+      padding-left: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      line-height: $ruler-height;
+      opacity: 0.9;
+      white-space: nowrap;
+    }
   }
 
   .anim-lane {

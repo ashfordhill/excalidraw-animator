@@ -498,16 +498,28 @@ const posesAt = (
   }
 };
 
-const applyFrame = (app: App, t: number) => {
-  const clips = getClips(app).sort(
+/**
+ * The scene elements with every clip's pose applied at `t`.
+ *
+ * Pure (doesn't touch the live scene) so the exporter can sample frames
+ * without seeking the editor.
+ */
+export const getFrameElements = (
+  elements: readonly ExcalidrawElement[],
+  clips: readonly ClipElement[],
+  t: number,
+): ExcalidrawElement[] => {
+  const sorted = [...clips].sort(
     (a, b) => a.customData.anim.start - b.customData.anim.start,
   );
-  if (!clips.length) {
-    return;
+  if (!sorted.length) {
+    return [...elements];
   }
-  const elementsMap = app.scene.getNonDeletedElementsMap();
+  const elementsMap = new Map(
+    elements.filter((el) => !el.isDeleted).map((el) => [el.id, el]),
+  ) as ElementsMap;
   const frame = new Map<string, Pose>();
-  for (const clip of clips) {
+  for (const clip of sorted) {
     const { start, duration, targets } = clip.customData.anim;
     const u = (t - start) / duration;
     if (u >= 0) {
@@ -519,20 +531,32 @@ const applyFrame = (app: App, t: number) => {
       first.forEach((pose, id) => !frame.has(id) && frame.set(id, pose));
     }
   }
+  return elements.map((el) => {
+    const pose = frame.get(el.id);
+    if (!pose || el.isDeleted) {
+      return el;
+    }
+    const { points, fontSize, ...rest } = pose;
+    return newElementWith(el, {
+      ...rest,
+      angle: rest.angle as ExcalidrawElement["angle"],
+      ...(points && "points" in el ? { points: points as any } : {}),
+      ...(fontSize && "fontSize" in el ? { fontSize } : {}),
+    });
+  });
+};
+
+const applyFrame = (app: App, t: number) => {
+  const clips = getClips(app);
+  if (!clips.length) {
+    return;
+  }
   app.updateScene({
-    elements: app.scene.getElementsIncludingDeleted().map((el) => {
-      const pose = frame.get(el.id);
-      if (!pose || el.isDeleted) {
-        return el;
-      }
-      const { points, fontSize, ...rest } = pose;
-      return newElementWith(el, {
-        ...rest,
-        angle: rest.angle as ExcalidrawElement["angle"],
-        ...(points && "points" in el ? { points: points as any } : {}),
-        ...(fontSize && "fontSize" in el ? { fontSize } : {}),
-      });
-    }),
+    elements: getFrameElements(
+      app.scene.getElementsIncludingDeleted(),
+      clips,
+      t,
+    ),
     captureUpdate: CaptureUpdateAction.NEVER,
   });
 };

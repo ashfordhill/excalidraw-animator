@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isAnimPath } from "@excalidraw/element";
 
 import { useApp } from "../components/App";
+import { DuplicateIcon, TrashIcon } from "../components/icons";
 import { useAppStateValue } from "../hooks/useAppStateValue";
 
 import {
@@ -54,19 +55,6 @@ const filmIcon = (
     <path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" />
   </svg>
 );
-const closeIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    width="12"
-    height="12"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.5"
-    strokeLinecap="round"
-  >
-    <path d="M6 6l12 12M18 6L6 18" />
-  </svg>
-);
 const mouseWheelIcon = (
   <svg
     viewBox="0 0 24 24"
@@ -88,6 +76,20 @@ const fmt = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
 const MIN_TIMELINE_VIEW = 1000;
 const MAX_TIMELINE_VIEW = 120000;
 const DEFAULT_TIMELINE_VIEW = 10000;
+
+/** nice ruler intervals in ms, so labels stay readable at every zoom level */
+const TICK_STEPS = [
+  1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000,
+  20000, 25000, 50000, 60000,
+];
+
+const niceStep = (raw: number) =>
+  TICK_STEPS.find((step) => step >= raw) ?? TICK_STEPS[TICK_STEPS.length - 1];
+
+const fmtTick = (ms: number) => {
+  const seconds = ms / 1000;
+  return `${Number(seconds.toFixed(2))}s`;
+};
 
 type App = ReturnType<typeof useApp>;
 
@@ -126,8 +128,28 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
   const [view, setView] = useState(() =>
     Math.max(DEFAULT_TIMELINE_VIEW, total * 1.25),
   );
+  const [timelineWidth, setTimelineWidth] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
   const pct = (ms: number) => `${(ms / view) * 100}%`;
+
+  // keep the ruler density tied to the actual width, including when the
+  // drawer or window is resized
+  useLayoutEffect(() => {
+    const timeline = timelineRef.current;
+    if (!timeline) {
+      return;
+    }
+    const update = () => setTimelineWidth(timeline.clientWidth);
+    update();
+    const ResizeObserverCtor = (app.ownerWindow as any).ResizeObserver;
+    if (ResizeObserverCtor) {
+      const observer = new ResizeObserverCtor(update);
+      observer.observe(timeline);
+      return () => observer.disconnect();
+    }
+    app.ownerWindow.addEventListener("resize", update);
+    return () => app.ownerWindow.removeEventListener("resize", update);
+  }, [app]);
 
   // keep the whole animation in view when a clip grows past the current scale
   useEffect(() => {
@@ -203,22 +225,35 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
     window.addEventListener("pointerup", up);
   };
 
-  const ticks = [];
-  const step =
-    view <= 3000
-      ? 500
-      : view <= 12000
-      ? 1000
-      : view <= 30000
-      ? 2000
-      : view <= 60000
-      ? 5000
-      : 10000;
-  for (let t = 0; t <= view; t += step) {
-    ticks.push(
-      <span key={t} className="anim-tick" style={{ left: pct(t) }}>
-        {t / 1000}s
+  // adaptive ruler: the interval snaps to "nice" values, and minor tick
+  // marks fill in between so zooming in reveals finer divisions
+  const rulerWidth = timelineWidth || 800;
+  const majorStep = niceStep(view / Math.max(1, rulerWidth / 64));
+  const minorStep = majorStep / 5;
+  const ticks: React.ReactNode[] = [];
+  const labels: React.ReactNode[] = [];
+  for (let t = 0; t <= view; t += majorStep) {
+    labels.push(
+      <span
+        key={`label-${t}`}
+        className="anim-tick anim-tick--major"
+        style={{ left: pct(t) }}
+      >
+        {fmtTick(t)}
       </span>,
+    );
+  }
+  for (let i = 1; i * minorStep < view; i++) {
+    if (i % 5 === 0) {
+      continue;
+    }
+    const t = i * minorStep;
+    ticks.push(
+      <span
+        key={`tick-${t}`}
+        className="anim-tick anim-tick--minor"
+        style={{ left: pct(t) }}
+      />,
     );
   }
 
@@ -228,7 +263,10 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
       className="anim-timeline"
       {...scrubHandlers(app, view)}
     >
-      <div className="anim-ruler">{ticks}</div>
+      <div className="anim-ruler">
+        {ticks}
+        {labels}
+      </div>
       {clips.map((c) => {
         const d = drag?.id === c.id ? drag : c.customData.anim;
         return (
@@ -293,19 +331,20 @@ const Drawer = ({ clips }: { clips: ClipElement[] }) => {
             <ClipName clip={c} />
             <div className="anim-list__actions">
               <button
-                className="anim-clone-btn"
-                title="Clone animation"
+                className="anim-action-btn"
+                title="Duplicate animation"
+                aria-label="Duplicate animation"
                 onClick={() => cloneClip(app, c.id)}
               >
-                Clone
+                {DuplicateIcon}
               </button>
               <button
-                className="anim-delete-btn"
+                className="anim-action-btn anim-action-btn--danger"
                 title="Delete animation"
                 aria-label="Delete animation"
                 onClick={() => deleteClip(app, c.id)}
               >
-                {closeIcon}
+                {TrashIcon}
               </button>
             </div>
           </div>

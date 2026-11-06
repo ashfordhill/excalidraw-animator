@@ -54,6 +54,7 @@ import {
   DeviceDesktopIcon,
   ExportIcon,
   ExportImageIcon,
+  FilmIcon,
   HelpIcon,
   LoadIcon,
   MoonIcon,
@@ -63,6 +64,7 @@ import {
   TrashIcon,
   usersIcon,
 } from "../icons";
+import { getClips, useSceneNonce } from "../../animation/animator";
 
 import "./DefaultItems.scss";
 
@@ -147,6 +149,28 @@ export const SaveAsImage = () => {
   );
 };
 SaveAsImage.displayName = "SaveAsImage";
+
+export const ExportAnimation = () => {
+  const app = useApp();
+  const setAppState = useExcalidrawSetAppState();
+  useSceneNonce(app);
+
+  if (!getClips(app).length) {
+    return null;
+  }
+
+  return (
+    <DropdownMenuItem
+      icon={FilmIcon}
+      data-testid="animation-export-button"
+      onSelect={() => setAppState({ openDialog: { name: "animationExport" } })}
+      aria-label="Export animation"
+    >
+      Export animation…
+    </DropdownMenuItem>
+  );
+};
+ExportAnimation.displayName = "ExportAnimation";
 
 export const CommandPalette = (opts?: { className?: string }) => {
   const setAppState = useExcalidrawSetAppState();

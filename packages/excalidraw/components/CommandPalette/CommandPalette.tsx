@@ -48,11 +48,13 @@ import {
   boltIcon,
   bucketFillIcon,
   ExportImageIcon,
+  FilmIcon,
   mermaidLogoIcon,
   brainIconThin,
   LibraryIcon,
   historyCommandIcon,
 } from "../icons";
+import { getClips } from "../../animation/animator";
 
 import { TOOLS, getToolLetter } from "../Tools";
 import { canChangeBackgroundColor, canChangeStrokeColor } from "../Actions";
@@ -416,6 +418,16 @@ function CommandPaletteInner({
           ],
           perform: () => {
             setAppState({ openDialog: { name: "imageExport" } });
+          },
+        },
+        {
+          label: "Export animation…",
+          category: DEFAULT_CATEGORIES.export,
+          icon: FilmIcon,
+          keywords: ["gif", "webm", "mp4", "video", "animation"],
+          predicate: () => getClips(app).length > 0,
+          perform: () => {
+            setAppState({ openDialog: { name: "animationExport" } });
           },
         },
         ...exportCommands,

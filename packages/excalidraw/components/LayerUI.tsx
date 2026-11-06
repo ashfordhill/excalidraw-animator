@@ -33,6 +33,7 @@ import {
 } from "../actions/colorTargets";
 
 import { AnimationPlayer } from "../animation/Player";
+import { AnimationExportDialog } from "../animation/AnimationExportDialog";
 
 import { SelectedShapeActions, CompactShapeActions } from "./Actions";
 import { LoadingMessage } from "./LoadingMessage";
@@ -123,6 +124,7 @@ const DefaultMainMenu: React.FC<{
       {UIOptions.canvasActions.saveAsImage && (
         <MainMenu.DefaultItems.SaveAsImage />
       )}
+      <MainMenu.DefaultItems.ExportAnimation />
       <MainMenu.DefaultItems.SearchMenu />
       <MainMenu.DefaultItems.Help />
       <MainMenu.DefaultItems.ClearCanvas />
@@ -234,6 +236,19 @@ const LayerUI = ({
         onExportImage={onExportImage}
         onCloseRequest={() => setAppState({ openDialog: null })}
         name={app.getName()}
+      />
+    );
+  };
+
+  const renderAnimationExportDialog = () => {
+    if (appState.openDialog?.name !== "animationExport") {
+      return null;
+    }
+
+    return (
+      <AnimationExportDialog
+        app={app}
+        onCloseRequest={() => setAppState({ openDialog: null })}
       />
     );
   };
@@ -599,6 +614,7 @@ const LayerUI = ({
       )}
       <tunnels.OverwriteConfirmDialogTunnel.Out />
       {renderImageExportDialog()}
+      {renderAnimationExportDialog()}
       {renderJSONExportDialog()}
       {defaultUIEnabled && appState.openDialog?.name === "charts" && (
         <PasteChartDialog
