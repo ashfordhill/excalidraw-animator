@@ -45,6 +45,7 @@ import { isSomeElementSelected } from "../scene";
 import { getShortcutKey } from "../shortcut";
 
 import { selectGroupsForSelectedElements } from "../components/App.selection";
+import { inheritAnimationGroupTargets } from "../animation/animator";
 
 import { register } from "./register";
 
@@ -195,7 +196,7 @@ export const actionGroup = register({
           getNonDeletedElements(nextElements),
         ),
       },
-      elements: reorderedElements,
+      elements: inheritAnimationGroupTargets(reorderedElements),
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
   },

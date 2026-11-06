@@ -7,20 +7,18 @@ import {
   CaptureUpdateAction,
   LinearElementEditor,
   animPathVisibility,
-  duplicateElement,
-  getElementBounds,
-  getElementsInGroup,
   isAnimPath,
   isTextElement,
   newElementWith,
   newLinearElement,
 } from "@excalidraw/element";
 
+import type { Merge } from "@excalidraw/common/utility-types";
 import type { LocalPoint } from "@excalidraw/math";
 import type {
   ElementsMap,
   ExcalidrawElement,
-  ExcalidrawLinearElement,
+  ExcalidrawLineElement,
 } from "@excalidraw/element/types";
 
 import type { AppClassProperties } from "../types";
@@ -28,7 +26,7 @@ import type { AppClassProperties } from "../types";
 /**
  * An animation clip lives on a hidden, dashed `line` element (the motion
  * path) in `customData.anim`. That makes clips regular scene elements: undo,
- * copy/paste, alt-drag duplicate, save/load and point editing come for free.
+ * save/load and point editing are shared with the canvas.
  *
  * The targets' center follows the path; `keys` hold, over normalized time,
  * the progress along the path and the scale/rotation relative to `home`.
@@ -57,9 +55,12 @@ export type ClipData = {
   home: Record<string, Home>;
   keys: Key[];
 };
-export type ClipElement = ExcalidrawLinearElement & {
-  customData: { anim: ClipData };
-};
+export type ClipElement = Merge<
+  ExcalidrawLineElement,
+  {
+    customData: { anim: ClipData };
+  }
+>;
 
 // ------------------------------------------------------------------ UI state
 
@@ -282,7 +283,7 @@ const sample = (app: App) => {
   if (!rec) {
     return;
   }
-  const now = performance.now() - rec.t0;
+  const now = app.ownerWindow.performance.now() - rec.t0;
   for (const el of app.scene.getNonDeletedElements()) {
     const base = rec.base.get(el.id);
     if (!base) {
@@ -307,31 +308,36 @@ const sample = (app: App) => {
 };
 
 export const toggleRecording = (app: App) => {
+  if (state.drawerOpen || state.playing || app.state.openDialog) {
+    return;
+  }
   if (rec) {
     stopRecording(app);
     return;
   }
-  if (state.playing) {
-    return;
-  }
   const selected = app.scene
-    .getSelectedElements(app.state)
+    .getSelectedElements({
+      selectedElementIds: app.state.selectedElementIds,
+      includeBoundTextElement: true,
+      includeElementsInFrames: true,
+    })
     .filter((el) => !isAnimPath(el));
   if (!selected.length) {
     app.setState({
-      toast: { message: "Select something to animate, then press R" },
+      toast: { message: "Select something to animate, then press G" },
     });
     return;
   }
   // recording always starts a new clip at 0s: bring the preview back to the
   // first frame so the base pose (and playhead) match where the clip begins
   seek(app, 0);
+  const targetIds = new Set(selected.map((el) => el.id));
   rec = {
-    t0: performance.now(),
+    t0: app.ownerWindow.performance.now(),
     base: new Map(
       app.scene
         .getNonDeletedElements()
-        .filter((el) => !isAnimPath(el))
+        .filter((el) => targetIds.has(el.id))
         .map((el) => [el.id, readPose(el)]),
     ),
     tracks: new Map(),
@@ -358,7 +364,14 @@ const stopRecording = (app: App) => {
   }
 
   // trim idle time before the first and after the last change
-  const t0 = Math.min(...tracks.map(([, kfs]) => kfs[1].t));
+  const t0 = Math.min(
+    ...tracks.map(([, kfs]) => {
+      // Keep the sample immediately BEFORE the first change. Starting at the
+      // changed sample discards the first motion and shifts fast, wide paths.
+      const firstChange = kfs.findIndex((pose) => !samePose(pose, kfs[0]));
+      return kfs[Math.max(0, firstChange - 1)].t;
+    }),
+  );
   const t1 = Math.max(...tracks.map(([, kfs]) => kfs[kfs.length - 1].t));
   const duration = Math.max(16, t1 - t0);
 
@@ -444,14 +457,13 @@ const stopRecording = (app: App) => {
     elements: [...app.scene.getElementsIncludingDeleted(), path],
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
-  seen.set(path.id, path.version);
   set({ time: data.duration });
 };
 
 // ------------------------------------------------------------------ playback
 
 const keyAt = (keys: Key[], u: number): Key => {
-  if (u <= keys[0][0]) {
+  if (keys.length === 1 || u <= keys[0][0]) {
     return keys[0];
   }
   let i = 1;
@@ -546,19 +558,25 @@ export const getFrameElements = (
   });
 };
 
+let applyingFrame = false;
 const applyFrame = (app: App, t: number) => {
   const clips = getClips(app);
   if (!clips.length) {
     return;
   }
-  app.updateScene({
-    elements: getFrameElements(
-      app.scene.getElementsIncludingDeleted(),
-      clips,
-      t,
-    ),
-    captureUpdate: CaptureUpdateAction.NEVER,
-  });
+  applyingFrame = true;
+  try {
+    app.updateScene({
+      elements: getFrameElements(
+        app.scene.getElementsIncludingDeleted(),
+        clips,
+        t,
+      ),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  } finally {
+    applyingFrame = false;
+  }
 };
 
 export const seek = (app: App, time: number) => {
@@ -568,16 +586,18 @@ export const seek = (app: App, time: number) => {
 };
 
 let raf = 0;
+let playbackWindow: App["ownerWindow"] | null = null;
 export const play = (app: App, fromStart = false) => {
   if (rec) {
     return;
   }
-  cancelAnimationFrame(raf);
+  playbackWindow?.cancelAnimationFrame(raf);
+  playbackWindow = app.ownerWindow;
   const total = totalDuration(getClips(app));
   let t = fromStart || state.time >= total ? 0 : state.time;
   set({ playing: true });
   seek(app, t);
-  let prev = performance.now();
+  let prev = app.ownerWindow.performance.now();
   const tick = (now: number) => {
     t += now - prev;
     prev = now;
@@ -587,22 +607,25 @@ export const play = (app: App, fromStart = false) => {
       return;
     }
     seek(app, t);
-    raf = requestAnimationFrame(tick);
+    raf = app.ownerWindow.requestAnimationFrame(tick);
   };
-  raf = requestAnimationFrame(tick);
+  raf = app.ownerWindow.requestAnimationFrame(tick);
 };
 
 export const pause = () => {
-  cancelAnimationFrame(raf);
+  playbackWindow?.cancelAnimationFrame(raf);
   set({ playing: false });
 };
 
 export const setScrubbing = (scrubbing: boolean) => set({ scrubbing });
-export const setDrawerOpen = (drawerOpen: boolean) => set({ drawerOpen });
+export const setDrawerOpen = (drawerOpen: boolean) => {
+  if (!state.recording) {
+    set({ drawerOpen });
+  }
+};
 
-/** in the editor only motion paths may be transformed; recording is exempt */
-export const isAnimEditorPathsOnly = () =>
-  state.drawerOpen && !state.playing && !state.scrubbing && !state.recording;
+/** Objects remain visible, but only motion paths are selectable in the editor. */
+export const isAnimEditorPathsOnly = () => state.drawerOpen;
 
 export const setPathsVisible = (app: App, visible: boolean) => {
   if (animPathVisibility.visible === visible) {
@@ -616,6 +639,104 @@ export const setPathsVisible = (app: App, visible: boolean) => {
 };
 
 // --------------------------------------------------------- editing clips
+
+/**
+ * Paths belong to their parts, even while those parts are ungrouped. Any group
+ * containing a linked part inherits the motion, including newly added pieces.
+ * Keep the old homes and path unchanged; express additions in the same local
+ * coordinates by undoing the linked part's current scale and rotation.
+ */
+export const inheritAnimationGroupTargets = (
+  elements: readonly ExcalidrawElement[],
+): readonly ExcalidrawElement[] => {
+  const visible = elements.filter((el) => !el.isDeleted && !isAnimPath(el));
+  const byId = new Map(visible.map((el) => [el.id, el]));
+  let changed = false;
+  const nextElements = elements.map((clip) => {
+    if (clip.isDeleted || !isAnimPath(clip)) {
+      return clip;
+    }
+    const data = clip.customData!.anim as ClipData;
+    const anchors = data.targets.flatMap((id) => {
+      const element = byId.get(id);
+      return element && data.home[id] ? [{ element, home: data.home[id] }] : [];
+    });
+    const byGroup = new Map<string, typeof anchors[number]>();
+    for (const anchor of anchors) {
+      for (const groupId of anchor.element.groupIds) {
+        if (!byGroup.has(groupId)) {
+          byGroup.set(groupId, anchor);
+        }
+      }
+    }
+    if (!byGroup.size) {
+      return clip;
+    }
+
+    const targets = new Set(data.targets);
+    const home = { ...data.home };
+    for (const element of visible) {
+      if (targets.has(element.id)) {
+        continue;
+      }
+      // Bound labels travel with their container, even without their own group ID.
+      const container =
+        isTextElement(element) && element.containerId
+          ? byId.get(element.containerId)
+          : undefined;
+      const groupId = [
+        ...element.groupIds,
+        ...(container?.groupIds ?? []),
+      ].find((id) => byGroup.has(id));
+      const anchor = groupId ? byGroup.get(groupId) : undefined;
+      if (!anchor) {
+        continue;
+      }
+      const scale = (axis: "width" | "height") => {
+        // A horizontal/vertical line cannot tell us scale along its flat axis.
+        // Use a sibling with extent on that axis, or unit scale if all are flat.
+        const reference = [anchor, ...anchors].find(
+          ({ element: part, home: base }) =>
+            part.groupIds.includes(groupId!) &&
+            Math.abs(base[axis]) > 1e-6 &&
+            Math.abs(part[axis]) > 1e-6,
+        );
+        return reference ? reference.element[axis] / reference.home[axis] : 1;
+      };
+      const sx = scale("width");
+      const sy = scale("height");
+      const rotation = wrapDelta(anchor.element.angle - anchor.home.angle);
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      const [ax, ay] = centerOf(readPose(anchor.element));
+      const [ex, ey] = centerOf(readPose(element));
+      const pose = readPose(element);
+      home[element.id] = {
+        dx: anchor.home.dx + ((ex - ax) * cos + (ey - ay) * sin) / sx,
+        dy: anchor.home.dy + (-(ex - ax) * sin + (ey - ay) * cos) / sy,
+        width: pose.width / sx,
+        height: pose.height / sy,
+        angle: normAngle(pose.angle - rotation),
+        ...(pose.points
+          ? { points: pose.points.map(([x, y]) => [x / sx, y / sy] as const) }
+          : {}),
+        ...(pose.fontSize ? { fontSize: pose.fontSize / sy } : {}),
+      };
+      targets.add(element.id);
+    }
+    if (targets.size === data.targets.length) {
+      return clip;
+    }
+    changed = true;
+    return newElementWith(clip, {
+      customData: {
+        ...clip.customData,
+        anim: { ...data, targets: [...targets], home },
+      },
+    });
+  });
+  return changed ? nextElements : elements;
+};
 
 const updateClipElement = (
   app: App,
@@ -644,110 +765,110 @@ export const updateClip = (app: App, id: string, patch: Partial<ClipData>) => {
   applyFrame(app, state.time);
 };
 
-export const deleteClip = (app: App, id: string) =>
-  updateClipElement(app, id, { isDeleted: true });
-
-/** duplicate a clip and place the copy right after the original */
-export const cloneClip = (app: App, id: string) => {
-  const clip = app.scene.getElement(id) as ClipElement | null;
-  if (!clip) {
-    return;
-  }
-  const data = clip.customData.anim;
-  const used = new Set(getClips(app).map((c) => c.customData.anim.name));
-  const baseName = data.name.replace(/ copy( \d+)?$/, "");
-  let name = `${baseName} copy`;
-  for (let i = 2; used.has(name); i++) {
-    name = `${baseName} copy ${i}`;
-  }
-  const copy = duplicateElement(
-    app.state.editingGroupId,
-    new Map(),
-    clip,
-    true,
-  );
-  const next: ClipElement = {
-    ...copy,
-    customData: {
-      ...copy.customData,
-      anim: {
-        ...data,
-        name,
-        start: data.start + data.duration,
-      },
-    },
-  };
+/** Delete the animation, preserving the objects and clearing its selection. */
+export const deleteClip = (app: App, id: string) => {
+  const selectedElementIds = { ...app.state.selectedElementIds };
+  delete selectedElementIds[id];
   app.updateScene({
-    elements: [...app.scene.getElementsIncludingDeleted(), next],
+    elements: app.scene
+      .getElementsIncludingDeleted()
+      .map((el) =>
+        el.id === id ? newElementWith(el, { isDeleted: true }) : el,
+      ),
+    appState: {
+      selectedElementIds,
+      selectedGroupIds: {},
+      selectedLinearElement: null,
+    },
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
-  seen.set(next.id, next.version);
-  app.setState({
-    selectedElementIds: { [next.id]: true },
-    selectedGroupIds: {},
-    selectedLinearElement: null,
-  });
+  seek(app, state.time);
 };
 
-/**
- * after a pointer gesture that edited a path: if its start point was dropped
- * onto another object, the path now animates that object (and its group)
- */
-const seen = new Map<string, number>();
-export const trackPaths = (app: App) => {
-  for (const clip of getClips(app)) {
-    if (!seen.has(clip.id)) {
-      seen.set(clip.id, clip.version);
-    }
-  }
-};
-export const onEditorPointerUp = (app: App) => {
-  if (rec || state.playing) {
-    return;
-  }
-  const elementsMap = app.scene.getNonDeletedElementsMap();
-  const elements = app.scene.getNonDeletedElements();
-  let changed = false;
-  for (const clip of getClips(app)) {
-    const prev = seen.get(clip.id);
-    seen.set(clip.id, clip.version);
-    if (prev === clip.version) {
-      continue;
-    }
-    changed = true;
-    const [sx, sy] = LinearElementEditor.getPointsGlobalCoordinates(
-      clip,
-      elementsMap,
-    )[0];
-    const hit = [...elements].reverse().find((el) => {
-      if (isAnimPath(el) || (isTextElement(el) && el.containerId)) {
-        return false;
-      }
-      const [x1, y1, x2, y2] = getElementBounds(el, elementsMap);
-      return sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2;
-    });
-    if (!hit || clip.customData.anim.targets.includes(hit.id)) {
-      continue;
-    }
-    const group = hit.groupIds.length
-      ? getElementsInGroup(elementsMap, hit.groupIds[hit.groupIds.length - 1])
-      : [hit];
-    const groupIds = new Set(group.map((el) => el.id));
-    const targets = elements.filter(
-      (el) =>
-        !isAnimPath(el) &&
-        (groupIds.has(el.id) ||
-          (isTextElement(el) &&
-            el.containerId &&
-            groupIds.has(el.containerId))),
+/** Keep paths and their linked parts together, including newly grouped pieces. */
+export const watchAnimationPaths = (app: App) => {
+  let previous = new Map<string, { x: number; y: number; version: number }>();
+  let syncing = false;
+  const snapshot = () => {
+    previous = new Map(
+      app.scene
+        .getNonDeletedElements()
+        .map((el) => [el.id, { x: el.x, y: el.y, version: el.version }]),
     );
-    updateClip(app, clip.id, {
-      targets: targets.map((el) => el.id),
-      home: homesFor(new Map(targets.map((el) => [el.id, readPose(el)]))),
-    });
-    seen.set(clip.id, app.scene.getElement(clip.id)!.version);
-  }
-  if (changed) {
-    applyFrame(app, state.time);
-  }
+  };
+  snapshot();
+  const sync = () => {
+    if (syncing) {
+      return;
+    }
+    if (applyingFrame || state.recording || state.playing || state.scrubbing) {
+      snapshot();
+      return;
+    }
+    syncing = true;
+    try {
+      const elements = app.scene.getElementsIncludingDeleted();
+      const inherited = inheritAnimationGroupTargets(elements);
+      if (inherited !== elements) {
+        // Covers loaded scenes and additions made while editing an existing group.
+        // The group action itself includes this update in its undoable result.
+        app.updateScene({
+          elements: inherited,
+          captureUpdate: CaptureUpdateAction.EVENTUALLY,
+        });
+      }
+      const clips = getClips(app);
+      const changedPath = clips.some((clip) => {
+        const prev = previous.get(clip.id);
+        return prev && prev.version !== clip.version;
+      });
+      if (state.drawerOpen && changedPath) {
+        applyFrame(app, state.time);
+      } else if (!state.drawerOpen) {
+        const translated = new Map<string, ClipElement>();
+        const previousElements = previous;
+        for (const clip of clips) {
+          const prev = previous.get(clip.id);
+          // Undo/redo can restore both the object and its path in one update.
+          if (!prev || prev.version !== clip.version) {
+            continue;
+          }
+          const deltas = clip.customData.anim.targets.flatMap((id) => {
+            const target = app.scene.getElement(id);
+            const before = previousElements.get(id);
+            return target && !target.isDeleted && before
+              ? [[target.x - before.x, target.y - before.y]]
+              : [];
+          });
+          if (!deltas.length) {
+            continue;
+          }
+          const dx =
+            deltas.reduce((sum, delta) => sum + delta[0], 0) / deltas.length;
+          const dy =
+            deltas.reduce((sum, delta) => sum + delta[1], 0) / deltas.length;
+          if (dx || dy) {
+            translated.set(
+              clip.id,
+              newElementWith(clip, { x: clip.x + dx, y: clip.y + dy }),
+            );
+          }
+        }
+        if (translated.size) {
+          app.updateScene({
+            elements: app.scene
+              .getElementsIncludingDeleted()
+              .map((el) => translated.get(el.id) ?? el),
+            captureUpdate: CaptureUpdateAction.NEVER,
+          });
+        }
+      }
+      snapshot();
+    } finally {
+      syncing = false;
+    }
+  };
+  const off = onSceneUpdate(app, sync);
+  sync();
+  return off;
 };

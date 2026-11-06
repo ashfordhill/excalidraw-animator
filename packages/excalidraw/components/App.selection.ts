@@ -9,6 +9,7 @@ import {
   getSelectedElements,
   getSelectedGroupForElement,
   isBoundToContainer,
+  isAnimPath,
   isEmbeddableElement,
   isFrameLikeElement,
   isLinearElement,
@@ -24,6 +25,8 @@ import type {
 
 import type { Mutable } from "@excalidraw/common/utility-types";
 import type { CaptureUpdateActionType } from "@excalidraw/element";
+
+import { isAnimEditorPathsOnly } from "../animation/animator";
 
 import type {
   AppClassProperties,
@@ -146,6 +149,19 @@ export const selectGroupsForSelectedElements = (function () {
       "selectedGroupIds" | "editingGroupId" | "selectedElementIds"
     >
   > => {
+    if (isAnimEditorPathsOnly()) {
+      return {
+        selectedElementIds: Object.fromEntries(
+          elements
+            .filter(
+              (el) => isAnimPath(el) && appState.selectedElementIds[el.id],
+            )
+            .map((el) => [el.id, true as const]),
+        ),
+        selectedGroupIds: {},
+        editingGroupId: null,
+      };
+    }
     const selectedElements = app
       ? app.scene.getSelectedElements({
           selectedElementIds: appState.selectedElementIds,
@@ -283,7 +299,9 @@ export const getSelectionStateForElements = (
   deep = false,
 ) => {
   const elements = targetElements.filter(
-    (element) => !isBoundToContainer(element),
+    (element) =>
+      !isBoundToContainer(element) &&
+      (!isAnimEditorPathsOnly() || isAnimPath(element)),
   );
 
   let editingGroupId = appState.editingGroupId;
@@ -351,7 +369,9 @@ export const getSelectionStateAddingElements = (
   appState: AppState,
 ) => {
   const elements = targetElements.filter(
-    (element) => !isBoundToContainer(element),
+    (element) =>
+      !isBoundToContainer(element) &&
+      (!isAnimEditorPathsOnly() || isAnimPath(element)),
   );
 
   let nextSelectedElementIds: Record<ExcalidrawElement["id"], true> = {

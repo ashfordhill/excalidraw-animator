@@ -34,6 +34,8 @@ import type {
   NonDeleted,
 } from "@excalidraw/element/types";
 
+import { isAnimEditorPathsOnly } from "../animation/animator";
+
 import { actionCopy, actionCut } from "../actions";
 import { tryParseSpreadsheet } from "../charts";
 import { parseClipboard, parseDataTransferEvent } from "../clipboard";
@@ -313,7 +315,7 @@ export class AppClipboard {
 
   public pasteFromClipboard = withBatchedUpdates(
     async (event: ClipboardEvent) => {
-      if (!this.app.isInteractionEnabled()) {
+      if (!this.app.isInteractionEnabled() || isAnimEditorPathsOnly()) {
         return;
       }
 

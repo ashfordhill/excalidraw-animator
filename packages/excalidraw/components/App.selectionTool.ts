@@ -77,6 +77,8 @@ import {
 
 import { snapDraggedElements, snapResizingElements } from "../snapping";
 
+import { isAnimEditorPathsOnly } from "../animation/animator";
+
 import { selectGroupsForSelectedElements } from "./App.selection";
 
 import type React from "react";
@@ -1007,7 +1009,11 @@ export class AppSelectionTool {
         });
 
         // We duplicate the selected element if alt is pressed on pointer move
-        if (event.altKey && !pointerDownState.hit.hasBeenDuplicated) {
+        if (
+          event.altKey &&
+          !isAnimEditorPathsOnly() &&
+          !pointerDownState.hit.hasBeenDuplicated
+        ) {
           this.app.duplicate.duplicateDraggedSelection(pointerDownState, event);
         }
 

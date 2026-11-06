@@ -4,15 +4,12 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isAnimPath } from "@excalidraw/element";
 
 import { useApp } from "../components/App";
-import { DuplicateIcon, TrashIcon } from "../components/icons";
+import { downloadIcon, TrashIcon } from "../components/icons";
 import { useAppStateValue } from "../hooks/useAppStateValue";
 
 import {
-  cloneClip,
   deleteClip,
   getClips,
-  onEditorPointerUp,
-  onSceneUpdate,
   pause,
   play,
   seek,
@@ -21,7 +18,7 @@ import {
   setScrubbing,
   toggleRecording,
   totalDuration,
-  trackPaths,
+  watchAnimationPaths,
   updateClip,
   useAnimator,
   useSceneNonce,
@@ -36,7 +33,7 @@ const svg = (d: React.ReactNode) => (
     {d}
   </svg>
 );
-const recordIcon = svg(<circle cx="12" cy="12" r="6" />);
+const recordIcon = svg(<circle cx="12" cy="12" r="8" />);
 const stopIcon = svg(<rect x="6" y="6" width="12" height="12" rx="1" />);
 const playIcon = svg(<path d="M7 4l13 8-13 8z" />);
 const pauseIcon = svg(<path d="M6 4h4v16H6zm8 0h4v16h-4z" />);
@@ -77,14 +74,11 @@ const MIN_TIMELINE_VIEW = 1000;
 const MAX_TIMELINE_VIEW = 120000;
 const DEFAULT_TIMELINE_VIEW = 10000;
 
-/** nice ruler intervals in ms, so labels stay readable at every zoom level */
-const TICK_STEPS = [
-  1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000,
-  20000, 25000, 50000, 60000,
-];
-
-const niceStep = (raw: number) =>
-  TICK_STEPS.find((step) => step >= raw) ?? TICK_STEPS[TICK_STEPS.length - 1];
+/** Decimal 1–2–5 intervals keep every zoom level on a predictable time grid. */
+export const niceStep = (raw: number) => {
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(1, raw)));
+  return [1, 2, 5, 10].find((step) => step * magnitude >= raw)! * magnitude;
+};
 
 const fmtTick = (ms: number) => {
   const seconds = ms / 1000;
@@ -115,6 +109,8 @@ const scrubHandlers = (
       }
     },
     onPointerUp: () => setScrubbing(false),
+    onPointerCancel: () => setScrubbing(false),
+    onLostPointerCapture: () => setScrubbing(false),
   };
 };
 
@@ -124,6 +120,8 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
   const app = useApp();
   const s = useAnimator();
   const [drag, setDrag] = useState<Drag | null>(null);
+  const dragCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => () => dragCleanup.current?.(), []);
   const total = totalDuration(clips);
   const [view, setView] = useState(() =>
     Math.max(DEFAULT_TIMELINE_VIEW, total * 1.25),
@@ -153,9 +151,7 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
 
   // keep the whole animation in view when a clip grows past the current scale
   useEffect(() => {
-    setView((current) =>
-      Math.max(current, Math.min(MAX_TIMELINE_VIEW, total * 1.25)),
-    );
+    setView((current) => Math.max(current, total * 1.25));
   }, [total]);
 
   // wheel-to-zoom. native listener so preventDefault() actually works
@@ -174,13 +170,16 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
       setView((current) =>
         Math.max(
           MIN_TIMELINE_VIEW,
-          Math.min(MAX_TIMELINE_VIEW, Math.round(current * factor)),
+          Math.min(
+            Math.max(MAX_TIMELINE_VIEW, total * 1.25),
+            Math.round(current * factor),
+          ),
         ),
       );
     };
     timeline.addEventListener("wheel", onWheel, { passive: false });
     return () => timeline.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [total]);
 
   /** move the clip, or stretch it from either edge (changes its speed) */
   const startDrag = (
@@ -189,6 +188,11 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
     mode: "move" | "left" | "right",
   ) => {
     e.stopPropagation();
+    if (e.button !== 0) {
+      return;
+    }
+    pause();
+    dragCleanup.current?.();
     const { start, duration } = clip.customData.anim;
     const lane = (e.currentTarget as HTMLElement).closest(".anim-lane")!;
     const width = lane.getBoundingClientRect().width;
@@ -208,9 +212,18 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
       }
       setDrag(next);
     };
+    const cleanup = () => {
+      app.ownerWindow.removeEventListener("pointermove", move);
+      app.ownerWindow.removeEventListener("pointerup", up);
+      app.ownerWindow.removeEventListener("pointercancel", cancel);
+      dragCleanup.current = null;
+    };
+    const cancel = () => {
+      cleanup();
+      setDrag(null);
+    };
     const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      cleanup();
       setDrag(null);
       if (moved) {
         updateClip(app, clip.id, {
@@ -218,17 +231,23 @@ const Timeline = ({ clips }: { clips: ClipElement[] }) => {
           duration: Math.round(next.duration),
         });
       } else {
-        app.setState({ selectedElementIds: { [clip.id]: true } });
+        app.setState({
+          selectedElementIds: { [clip.id]: true },
+          selectedGroupIds: {},
+          selectedLinearElement: null,
+        });
       }
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    dragCleanup.current = cleanup;
+    app.ownerWindow.addEventListener("pointercancel", cancel);
+    app.ownerWindow.addEventListener("pointermove", move);
+    app.ownerWindow.addEventListener("pointerup", up);
   };
 
   // adaptive ruler: the interval snaps to "nice" values, and minor tick
   // marks fill in between so zooming in reveals finer divisions
   const rulerWidth = timelineWidth || 800;
-  const majorStep = niceStep(view / Math.max(1, rulerWidth / 64));
+  const majorStep = niceStep(view / Math.max(1, rulerWidth / 80));
   const minorStep = majorStep / 5;
   const ticks: React.ReactNode[] = [];
   const labels: React.ReactNode[] = [];
@@ -320,10 +339,11 @@ const Drawer = ({ clips }: { clips: ClipElement[] }) => {
   return (
     <div className="anim-drawer">
       <div className="anim-list">
-        <div className="anim-list__spacer" />
+        <div className="anim-list__spacer">Animations</div>
         {!clips.length && (
           <div className="anim-empty">
-            Select something, press R (or ●), move it, press R again.
+            Close the editor, select an object, press G, move it, then press G
+            again.
           </div>
         )}
         {clips.map((c) => (
@@ -331,17 +351,9 @@ const Drawer = ({ clips }: { clips: ClipElement[] }) => {
             <ClipName clip={c} />
             <div className="anim-list__actions">
               <button
-                className="anim-action-btn"
-                title="Duplicate animation"
-                aria-label="Duplicate animation"
-                onClick={() => cloneClip(app, c.id)}
-              >
-                {DuplicateIcon}
-              </button>
-              <button
                 className="anim-action-btn anim-action-btn--danger"
-                title="Delete animation"
-                aria-label="Delete animation"
+                title="Delete animation (keep objects)"
+                aria-label={`Delete ${c.customData.anim.name}`}
                 onClick={() => deleteClip(app, c.id)}
               >
                 {TrashIcon}
@@ -366,17 +378,20 @@ export const AnimationPlayer = () => {
   const total = totalDuration(clips);
   const editor = s.drawerOpen && !s.playing;
   const canRecord =
-    s.recording ||
-    app.scene
-      .getNonDeletedElements()
-      .some((el) => selectedElementIds[el.id] && !isAnimPath(el));
-  const recordHint = s.recording
-    ? "Stop recording — R"
+    !s.drawerOpen &&
+    (s.recording ||
+      app.scene
+        .getNonDeletedElements()
+        .some((el) => selectedElementIds[el.id] && !isAnimPath(el)));
+  const recordHint = s.drawerOpen
+    ? "Close the animation editor to record — G"
+    : s.recording
+    ? "Stop recording — G"
     : s.playing
-    ? "Pause playback to record — R"
+    ? "Pause playback to record — G"
     : canRecord
-    ? "Record — R"
-    : "Select something to record — R";
+    ? "Record — G"
+    : "Select something to record — G";
 
   // hide the editor UI (everything but the canvas and this player)
   const hideUI = s.drawerOpen || s.playing || s.scrubbing;
@@ -404,22 +419,28 @@ export const AnimationPlayer = () => {
     return () => app.setState({ viewModeEnabled: prevViewMode });
   }, [s.playing, app]);
 
-  // editor: motion paths are visible and editable
+  useLayoutEffect(() => watchAnimationPaths(app), [app]);
+
+  // Enter with a clean selection and the selection tool; only paths are editable.
+  useLayoutEffect(() => {
+    if (s.drawerOpen) {
+      app.setState({
+        selectedElementIds: {},
+        selectedGroupIds: {},
+        selectedLinearElement: null,
+        editingGroupId: null,
+        activeTool: {
+          ...app.state.activeTool,
+          type: "selection",
+          customType: null,
+        },
+      });
+    }
+  }, [s.drawerOpen, app]);
+
   useLayoutEffect(() => {
     setPathsVisible(app, editor);
-    if (!editor) {
-      return;
-    }
-    trackPaths(app);
-    const offUpdate = onSceneUpdate(app, () => trackPaths(app));
-    const offUp = app.onPointerUpEmitter.on(() =>
-      // let the gesture's own scene update land first
-      setTimeout(() => onEditorPointerUp(app)),
-    );
-    return () => {
-      offUpdate();
-      offUp();
-    };
+    return () => setPathsVisible(app, false);
   }, [editor, app]);
 
   // drawer covers the bottom half: shift the view so the scene stays visible
@@ -447,7 +468,7 @@ export const AnimationPlayer = () => {
           aria-label={recordHint}
           data-tooltip={recordHint}
           onClick={() => toggleRecording(app)}
-          disabled={s.playing || !canRecord}
+          disabled={s.drawerOpen || s.playing || !canRecord}
         >
           {s.recording ? stopIcon : recordIcon}
         </button>
@@ -477,9 +498,20 @@ export const AnimationPlayer = () => {
         <button
           className={clsx({ active: s.drawerOpen })}
           title={s.drawerOpen ? "Close animation editor" : "Animation editor"}
+          disabled={s.recording}
           onClick={() => setDrawerOpen(!s.drawerOpen)}
         >
           {filmIcon}
+        </button>
+        <button
+          title="Export animation"
+          aria-label="Export animation"
+          disabled={s.recording || !clips.length}
+          onClick={() =>
+            app.setState({ openDialog: { name: "animationExport" } })
+          }
+        >
+          {downloadIcon}
         </button>
       </div>
     </div>

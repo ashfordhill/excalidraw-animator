@@ -5171,17 +5171,19 @@ class App extends React.Component<AppProps, AppState> {
 
       if (!isInputLike(event.target)) {
         if (
-          event.key.toLowerCase() === KEYS.R &&
+          event.key.toLowerCase() === KEYS.G &&
           !event.shiftKey &&
           !event.altKey &&
           !event[KEYS.CTRL_OR_CMD] &&
-          // R is Excalidraw's rectangle shortcut: only take it over when
-          // there's something to record (or a recording to stop)
+          !isAnimEditorPathsOnly() &&
+          !this.state.openDialog &&
           (isRecording() || hasRecordableSelection(this))
         ) {
           event.preventDefault();
           event.stopPropagation();
-          toggleRecording(this);
+          if (!event.repeat) {
+            toggleRecording(this);
+          }
           return;
         }
 
@@ -5332,7 +5334,8 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       // view mode hardcoded from upstream -> disable tool switching for now
-      const shouldPreventToolSwitching = this.props.viewModeEnabled === true;
+      const shouldPreventToolSwitching =
+        this.props.viewModeEnabled === true || isAnimEditorPathsOnly();
 
       if (
         !shouldPreventToolSwitching &&
@@ -6020,6 +6023,10 @@ class App extends React.Component<AppProps, AppState> {
       });
     }
 
+    if (isAnimEditorPathsOnly()) {
+      allHitElements = allHitElements.filter(isAnimPath);
+    }
+
     if (allHitElements.length > 1) {
       if (opts?.preferSelected) {
         for (let index = allHitElements.length - 1; index > -1; index--) {
@@ -6077,7 +6084,12 @@ class App extends React.Component<AppProps, AppState> {
                   !(isTextElement(element) && element.containerId)),
             )
     )
-      .filter((el) => !isHiddenAnimPath(el) && this.hitElement(x, y, el))
+      .filter(
+        (el) =>
+          !isHiddenAnimPath(el) &&
+          (!isAnimEditorPathsOnly() || isAnimPath(el)) &&
+          this.hitElement(x, y, el),
+      )
       .filter((element) => !this.isClippedByFrameAt(x, y, element))
       .filter((el) => {
         // The parameter elements comes ordered from lower z-index to higher.
@@ -7832,30 +7844,6 @@ class App extends React.Component<AppProps, AppState> {
       this.selectionTool.handleSelectionOnPointerDown(event, pointerDownState)
     ) {
       return;
-    }
-
-    // In the animation editor only paths are transformable. Objects can still
-    // be selected (to record them), but they must not be dragged or resized.
-    if (isAnimEditorPathsOnly()) {
-      const selected = this.scene.getSelectedElements(this.state);
-      const hit = pointerDownState.hit.element;
-      const hitIsPath = Boolean(hit && isAnimPath(hit));
-      const hitNonPath = Boolean(hit && !hitIsPath);
-      const pathAlreadySelected =
-        hitIsPath && selected.some((el) => el.id === hit!.id);
-      const selectionHasNonPath = selected.some((el) => !isAnimPath(el));
-      // clicking an unselected path replaces the selection with that path, so
-      // it is safe to start dragging it in the same gesture
-      const canStartPathDrag =
-        hitIsPath &&
-        !event.shiftKey &&
-        !pointerDownState.resize.handleType &&
-        !pathAlreadySelected;
-      if (!canStartPathDrag && (selectionHasNonPath || hitNonPath)) {
-        pointerDownState.drag.blockDragging = true;
-        pointerDownState.resize.handleType = false;
-        pointerDownState.resize.isResizing = false;
-      }
     }
 
     const allowOnPointerDown =

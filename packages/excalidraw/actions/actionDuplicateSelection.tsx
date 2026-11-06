@@ -28,6 +28,8 @@ import { useStylesPanelMode } from "../components/App";
 
 import { getSelectionStateForElements } from "../components/App.selection";
 
+import { isAnimEditorPathsOnly } from "../animation/animator";
+
 import { register } from "./register";
 
 export const actionDuplicateSelection = register({
@@ -35,8 +37,9 @@ export const actionDuplicateSelection = register({
   label: "labels.duplicateSelection",
   icon: DuplicateIcon,
   trackEvent: { category: "element" },
+  predicate: () => !isAnimEditorPathsOnly(),
   perform: (elements, appState, formData, app) => {
-    if (appState.selectedElementsAreBeingDragged) {
+    if (appState.selectedElementsAreBeingDragged || isAnimEditorPathsOnly()) {
       return false;
     }
 

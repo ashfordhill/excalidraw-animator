@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { muteFSAbortError } from "@excalidraw/common";
 
@@ -10,10 +16,15 @@ import { Switch } from "../components/Switch";
 import { downloadIcon } from "../components/icons";
 
 import {
+  ANIMATION_SIZE_PRESETS,
   createAnimationExportPlan,
   exportAnimation,
+  getAnimationSizeError,
   isVideoFormatSupported,
 } from "./exporter";
+
+import { pause } from "./animator";
+import { TimeRange } from "./TimeRange";
 
 import "./AnimationExportDialog.scss";
 
@@ -69,13 +80,26 @@ export const AnimationExportDialog = ({
 
   const [format, setFormat] = useState<AnimationFormat>("gif");
   const [fps, setFps] = useState(20);
-  const [scale, setScale] = useState<1 | 2 | 3>(() => {
-    const initial = app.state.exportScale;
-    return initial === 2 || initial === 3 ? initial : 1;
+  const [size, setSize] = useState(() => {
+    const original = plan?.outputSize(1) ?? { width: 1280, height: 720 };
+    return {
+      preset: "original",
+      width: String(original.width),
+      height: String(original.height),
+    };
   });
+  const output = useMemo(
+    () => ({ width: Number(size.width), height: Number(size.height) }),
+    [size.width, size.height],
+  );
+  const sizeError = getAnimationSizeError(output, format);
   const [background, setBackground] = useState(app.state.exportBackground);
   const [darkMode, setDarkMode] = useState(app.state.exportWithDarkMode);
-  const [loop, setLoop] = useState(true);
+  const [range, setRange] = useState({ start: 0, end: plan?.duration ?? 1000 });
+  const [previewPlaying, setPreviewPlaying] = useState(true);
+  const [previewTime, setPreviewTime] = useState(0);
+  const previewPosition = useRef(0);
+  useLayoutEffect(() => pause(), []);
 
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -83,7 +107,6 @@ export const AnimationExportDialog = ({
   const [status, setStatus] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [previewNode, setPreviewNode] = useState<HTMLDivElement | null>(null);
-  const previewRequest = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -93,37 +116,80 @@ export const AnimationExportDialog = ({
   }, []);
 
   useEffect(() => {
-    if (!previewNode || !plan) {
+    if (!previewNode || !plan || sizeError) {
       return;
     }
-    const requestId = ++previewRequest.current;
-    const settings = { scale: 1, background, darkMode };
-    plan
-      .renderFrameAt(0, settings)
-      .then((canvas) => {
-        if (requestId !== previewRequest.current) {
+    let cancelled = false;
+    let timer = 0;
+    let previous = app.ownerWindow.performance.now();
+    const render = async () => {
+      const now = app.ownerWindow.performance.now();
+      if (previewPlaying && !exporting) {
+        previewPosition.current =
+          range.start +
+          ((Math.max(0, previewPosition.current - range.start) +
+            now -
+            previous) %
+            (range.end - range.start));
+      }
+      previous = now;
+      const time = Math.max(
+        range.start,
+        Math.min(range.end, previewPosition.current),
+      );
+      try {
+        const canvas = await plan.renderFrameAt(time, {
+          scale: Math.min(1, 600 / output.width, 320 / output.height),
+          size: output,
+          background,
+          darkMode,
+        });
+        if (cancelled) {
           return;
         }
         previewNode.replaceChildren(canvas);
+        setPreviewTime(time);
         setPreviewError(null);
-      })
-      .catch((error) => {
-        if (requestId !== previewRequest.current) {
-          return;
+        if (previewPlaying && !exporting) {
+          timer = app.ownerWindow.setTimeout(
+            render,
+            Math.max(0, 50 - (app.ownerWindow.performance.now() - now)),
+          );
         }
-        console.error(error);
-        setPreviewError(error?.message || "Could not render a preview");
-      });
-  }, [previewNode, plan, background, darkMode]);
+      } catch (error: any) {
+        if (!cancelled) {
+          setPreviewError(error?.message || "Could not render a preview");
+        }
+      }
+    };
+    void render();
+    return () => {
+      cancelled = true;
+      app.ownerWindow.clearTimeout(timer);
+    };
+  }, [
+    app,
+    previewNode,
+    plan,
+    background,
+    darkMode,
+    previewPlaying,
+    range,
+    exporting,
+    output,
+    sizeError,
+  ]);
 
-  const output = plan?.outputSize(scale);
   const settings: AnimationExportSettings = {
     format,
     fps,
-    scale,
+    scale: 1,
+    size: output,
     background,
     darkMode,
-    loop,
+    loop: true,
+    startTime: range.start,
+    endTime: range.end,
   };
 
   const close = () => {
@@ -132,10 +198,10 @@ export const AnimationExportDialog = ({
   };
 
   const onExport = async () => {
-    if (!plan || exporting) {
+    if (!plan || exporting || sizeError) {
       return;
     }
-    const controller = new AbortController();
+    const controller = new app.ownerWindow.AbortController();
     abortRef.current = controller;
     setExporting(true);
     setExportError(null);
@@ -184,41 +250,117 @@ export const AnimationExportDialog = ({
   };
 
   return (
-    <Dialog onCloseRequest={close} title="Export animation">
+    <Dialog onCloseRequest={close} title="Export animation" size="wide">
       <div className="AnimationExportDialog">
-        <div className="AnimationExportDialog__preview">
-          {planError && (
-            <div className="AnimationExportDialog__preview__message">
-              {planError}
-            </div>
+        <div className="AnimationExportDialog__main">
+          <div className="AnimationExportDialog__preview">
+            {planError && (
+              <div className="AnimationExportDialog__preview__message">
+                {planError}
+              </div>
+            )}
+            {!planError && previewError && (
+              <div className="AnimationExportDialog__preview__message">
+                {previewError}
+              </div>
+            )}
+            {!planError && !previewError && !plan && (
+              <div className="AnimationExportDialog__preview__message">
+                Preparing preview…
+              </div>
+            )}
+            <div
+              className="AnimationExportDialog__preview__canvas"
+              ref={setPreviewNode}
+            />
+          </div>
+
+          {plan && (
+            <>
+              <div className="AnimationExportDialog__transport">
+                <button
+                  type="button"
+                  disabled={exporting}
+                  onClick={() => setPreviewPlaying((playing) => !playing)}
+                  aria-label={previewPlaying ? "Pause preview" : "Play preview"}
+                >
+                  {previewPlaying ? "Pause" : "Play"}
+                </button>
+                <span>
+                  {fmtTime(previewTime)} / {fmtTime(plan.duration)}
+                </span>
+                <span className="AnimationExportDialog__loop-hint">
+                  Looping preview
+                </span>
+              </div>
+              <input
+                className="AnimationExportDialog__seek"
+                type="range"
+                aria-label="Preview time"
+                min={range.start}
+                max={range.end}
+                step={10}
+                value={previewTime}
+                disabled={exporting}
+                onChange={(event) => {
+                  const time = Number(event.target.value);
+                  previewPosition.current = time;
+                  setPreviewTime(time);
+                  setPreviewPlaying(false);
+                  // A new range object refreshes the paused preview at the requested time.
+                  setRange((current) => ({ ...current }));
+                }}
+              />
+              <div className="AnimationExportDialog__trim-label">
+                <strong>Trim animation</strong>
+                <button
+                  type="button"
+                  disabled={
+                    exporting ||
+                    (range.start === 0 && range.end === plan.duration)
+                  }
+                  onClick={() => {
+                    previewPosition.current = 0;
+                    setRange({ start: 0, end: plan.duration });
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
+              <TimeRange
+                duration={plan.duration}
+                value={range}
+                time={previewTime}
+                disabled={exporting}
+                onChange={(next) => {
+                  previewPosition.current = next.start;
+                  setPreviewTime(next.start);
+                  setRange(next);
+                }}
+              />
+              <div className="AnimationExportDialog__range-labels">
+                <span>{fmtTime(range.start)}</span>
+                <strong>{fmtTime(range.end - range.start)} selected</strong>
+                <span>{fmtTime(range.end)}</span>
+              </div>
+              <p className="AnimationExportDialog__hint">
+                Drag either end to trim. Drag the middle to move the range.
+              </p>
+            </>
           )}
-          {!planError && previewError && (
-            <div className="AnimationExportDialog__preview__message">
-              {previewError}
-            </div>
-          )}
-          {!planError && !previewError && !plan && (
-            <div className="AnimationExportDialog__preview__message">
-              Preparing preview…
-            </div>
-          )}
-          <div
-            className="AnimationExportDialog__preview__canvas"
-            ref={setPreviewNode}
-          />
         </div>
 
         <div className="AnimationExportDialog__side">
           <p className="AnimationExportDialog__hint">
-            Crops to the content across the whole animation, so elements keep
-            their padding wherever they move.
+            Exports your whole scene, including objects that don’t move.
+            Trimming only changes which part of the animation is saved.
           </p>
 
           {plan && (
             <div className="AnimationExportDialog__meta">
               <span>{plan.clipCount} animation(s)</span>
-              <span>{fmtTime(plan.duration)}</span>
-              {output && (
+              <span>{fmtTime(range.end - range.start)}</span>
+              {!sizeError && (
                 <span>
                   {output.width} × {output.height} px
                 </span>
@@ -226,7 +368,10 @@ export const AnimationExportDialog = ({
             </div>
           )}
 
-          <div className="AnimationExportDialog__settings">
+          <fieldset
+            className="AnimationExportDialog__settings"
+            disabled={exporting}
+          >
             <Setting label="Format">
               <RadioGroup
                 name="animationFormat"
@@ -235,30 +380,97 @@ export const AnimationExportDialog = ({
                 choices={formats}
               />
             </Setting>
-            <Setting label="Frame rate">
-              <RadioGroup
-                name="animationFps"
-                value={fps}
-                onChange={setFps}
-                choices={[
-                  { value: 12, label: "12 fps" },
-                  { value: 20, label: "20 fps" },
-                  { value: 30, label: "30 fps" },
-                ]}
-              />
-            </Setting>
-            <Setting label="Scale">
-              <RadioGroup
-                name="animationScale"
-                value={scale}
-                onChange={setScale}
-                choices={[
-                  { value: 1, label: "1×" },
-                  { value: 2, label: "2×" },
-                  { value: 3, label: "3×" },
-                ]}
-              />
-            </Setting>
+            <div className="AnimationExportDialog__size">
+              <label htmlFor="animation-size-preset">Size</label>
+              <select
+                id="animation-size-preset"
+                value={size.preset}
+                onChange={(event) => {
+                  const preset = event.target.value;
+                  const dimensions =
+                    preset === "original"
+                      ? plan?.outputSize(1)
+                      : ANIMATION_SIZE_PRESETS.find(
+                          (entry) => entry.id === preset,
+                        );
+                  setSize((current) =>
+                    dimensions
+                      ? {
+                          preset,
+                          width: String(dimensions.width),
+                          height: String(dimensions.height),
+                        }
+                      : { ...current, preset },
+                  );
+                }}
+              >
+                <option value="original">Original scene size</option>
+                {ANIMATION_SIZE_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+                <option value="custom">Custom size</option>
+              </select>
+              <div className="AnimationExportDialog__dimensions">
+                <label>
+                  Width <span>px</span>
+                  <input
+                    type="number"
+                    min={16}
+                    max={4096}
+                    step={1}
+                    value={size.width}
+                    aria-invalid={!!sizeError}
+                    aria-describedby={
+                      sizeError ? "animation-size-error" : undefined
+                    }
+                    onChange={(event) =>
+                      setSize((current) => ({
+                        ...current,
+                        preset: "custom",
+                        width: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <span aria-hidden="true">×</span>
+                <label>
+                  Height <span>px</span>
+                  <input
+                    type="number"
+                    min={16}
+                    max={4096}
+                    step={1}
+                    value={size.height}
+                    aria-invalid={!!sizeError}
+                    aria-describedby={
+                      sizeError ? "animation-size-error" : undefined
+                    }
+                    onChange={(event) =>
+                      setSize((current) => ({
+                        ...current,
+                        preset: "custom",
+                        height: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              {sizeError && (
+                <div
+                  id="animation-size-error"
+                  role="alert"
+                  className="AnimationExportDialog__error"
+                >
+                  {sizeError}
+                </div>
+              )}
+              <p className="AnimationExportDialog__hint">
+                Fits the whole scene without stretching. Extra space is added
+                when the shape of the output differs.
+              </p>
+            </div>
             <Setting label="Background">
               <Switch
                 name="animationBackground"
@@ -266,23 +478,29 @@ export const AnimationExportDialog = ({
                 onChange={setBackground}
               />
             </Setting>
-            <Setting label="Dark mode">
-              <Switch
-                name="animationDarkMode"
-                checked={darkMode}
-                onChange={setDarkMode}
-              />
-            </Setting>
-            {format === "gif" && (
-              <Setting label="Loop forever">
-                <Switch
-                  name="animationLoop"
-                  checked={loop}
-                  onChange={setLoop}
+            <details className="AnimationExportDialog__advanced">
+              <summary>More options</summary>
+              <Setting label="Frame rate">
+                <RadioGroup
+                  name="animationFps"
+                  value={fps}
+                  onChange={setFps}
+                  choices={[
+                    { value: 12, label: "12 fps" },
+                    { value: 20, label: "20 fps" },
+                    { value: 30, label: "30 fps" },
+                  ]}
                 />
               </Setting>
-            )}
-          </div>
+              <Setting label="Dark mode">
+                <Switch
+                  name="animationDarkMode"
+                  checked={darkMode}
+                  onChange={setDarkMode}
+                />
+              </Setting>
+            </details>
+          </fieldset>
 
           {exportError && (
             <div className="AnimationExportDialog__error">{exportError}</div>
@@ -304,7 +522,7 @@ export const AnimationExportDialog = ({
               label={`Export ${format.toUpperCase()}`}
               icon={downloadIcon}
               onClick={onExport}
-              disabled={!plan || exporting}
+              disabled={!plan || exporting || !!sizeError}
             >
               Export {format.toUpperCase()}
             </FilledButton>

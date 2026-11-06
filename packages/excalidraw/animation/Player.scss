@@ -7,8 +7,8 @@ body.anim-preview .excalidraw {
 
 .excalidraw {
   $bar-zone: 64px;
-  $row: 30px;
-  $ruler-height: 24px;
+  $row: 36px;
+  $ruler-height: 32px;
 
   .anim-root {
     pointer-events: none;
@@ -76,7 +76,7 @@ body.anim-preview .excalidraw {
       color: #e03131;
     }
 
-    // small Excalidraw-style tooltip so the R shortcut is discoverable
+    // small Excalidraw-style tooltip so the G shortcut is discoverable
     &::after {
       content: attr(data-tooltip);
       position: absolute;
@@ -120,7 +120,7 @@ body.anim-preview .excalidraw {
 
   .anim-scrub {
     position: relative;
-    width: 220px;
+    width: clamp(60px, 22vw, 220px);
     height: 20px;
     cursor: pointer;
 
@@ -165,13 +165,18 @@ body.anim-preview .excalidraw {
   }
 
   .anim-list {
-    width: 260px;
+    width: clamp(150px, 24vw, 240px);
     flex-shrink: 0;
     border-right: 1px solid var(--default-border-color);
 
     &__spacer {
       height: $ruler-height;
-      background: var(--color-primary);
+      box-sizing: border-box;
+      padding: 0 10px;
+      line-height: $ruler-height;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--default-border-color);
     }
 
     &__item {
@@ -179,6 +184,7 @@ body.anim-preview .excalidraw {
       align-items: center;
       gap: 5px;
       height: $row;
+      box-sizing: border-box;
       padding: 0 4px 0 9px;
       border-bottom: 1px solid var(--default-border-color);
 
@@ -207,12 +213,14 @@ body.anim-preview .excalidraw {
     .anim-action-btn {
       width: 24px;
       height: 24px;
-      color: var(--icon-fill-color);
+      color: var(--text-primary-color);
       border-radius: var(--border-radius-md, 6px);
 
       svg {
-        width: 15px;
-        height: 15px;
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
       }
 
       &:hover {
@@ -235,6 +243,7 @@ body.anim-preview .excalidraw {
   .anim-timeline {
     position: relative;
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     cursor: pointer;
     user-select: none;
@@ -244,13 +253,16 @@ body.anim-preview .excalidraw {
     position: relative;
     height: $ruler-height;
     overflow: hidden;
-    background: var(--color-primary);
-    color: var(--color-icon-white);
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--default-border-color);
+    color: var(--text-primary-color);
   }
 
   .anim-tick {
     position: absolute;
     top: 0;
+    height: 8px;
+    top: auto;
     bottom: 0;
     border-left: 1px solid currentColor;
     pointer-events: none;
@@ -260,7 +272,8 @@ body.anim-preview .excalidraw {
     }
 
     &--major {
-      padding-left: 4px;
+      height: 100%;
+      padding-left: 5px;
       font-size: 0.72rem;
       font-weight: 600;
       line-height: $ruler-height;
@@ -272,6 +285,7 @@ body.anim-preview .excalidraw {
   .anim-lane {
     position: relative;
     height: $row;
+    box-sizing: border-box;
     border-bottom: 1px solid var(--default-border-color);
   }
 
@@ -284,7 +298,7 @@ body.anim-preview .excalidraw {
     box-sizing: border-box;
     overflow: hidden;
     white-space: nowrap;
-    line-height: 20px;
+    line-height: 26px;
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--color-primary-darkest);

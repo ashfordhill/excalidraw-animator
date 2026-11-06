@@ -17,8 +17,41 @@ import type { ClipElement } from "./animator";
 
 export type AnimationFormat = "gif" | "webm" | "mp4";
 
+export type AnimationOutputSize = { width: number; height: number };
+
+export const ANIMATION_SIZE_PRESETS = [
+  { id: "small", label: "Small · 640 × 360", width: 640, height: 360 },
+  { id: "hd", label: "HD · 1280 × 720", width: 1280, height: 720 },
+  { id: "full-hd", label: "Full HD · 1920 × 1080", width: 1920, height: 1080 },
+  { id: "square", label: "Square · 1080 × 1080", width: 1080, height: 1080 },
+  {
+    id: "portrait",
+    label: "Portrait · 1080 × 1920",
+    width: 1080,
+    height: 1920,
+  },
+] as const;
+
+export const getAnimationSizeError = (
+  size: AnimationOutputSize,
+  format?: AnimationFormat,
+) => {
+  if (
+    ![size.width, size.height].every(
+      (value) => Number.isInteger(value) && value >= 16 && value <= 4096,
+    )
+  ) {
+    return "Enter a width and height between 16 and 4096 whole pixels.";
+  }
+  if (format === "mp4" && (size.width % 2 || size.height % 2)) {
+    return "MP4 needs an even width and height. Add or subtract one pixel.";
+  }
+  return null;
+};
+
 export type AnimationRenderSettings = {
   scale: number;
+  size?: AnimationOutputSize;
   background: boolean;
   darkMode: boolean;
 };
@@ -27,6 +60,8 @@ export type AnimationExportSettings = AnimationRenderSettings & {
   format: AnimationFormat;
   fps: number;
   loop: boolean;
+  startTime?: number;
+  endTime?: number;
 };
 
 export type AnimationExportProgress = (progress: number, label: string) => void;
@@ -132,6 +167,26 @@ export const createAnimationExportPlan = (
     settings: AnimationRenderSettings,
   ) => {
     const frameElements = getFrameElements(elements, clips, time);
+    if (settings.size) {
+      const error = getAnimationSizeError(settings.size);
+      if (error) {
+        throw new Error(error);
+      }
+    }
+    // Fit the fixed, padded bounds of the entire animation into the requested
+    // output. Never fit each frame independently: that would make the camera move.
+    const fitScale = settings.size
+      ? Math.min(
+          settings.size.width / (contentWidth + padding * 2),
+          settings.size.height / (contentHeight + padding * 2),
+        )
+      : 1;
+    const viewportWidth = settings.size
+      ? settings.size.width / fitScale
+      : contentWidth;
+    const viewportHeight = settings.size
+      ? settings.size.height / fitScale
+      : contentHeight;
     return exportScene({
       type: "canvas",
       data: {
@@ -144,13 +199,13 @@ export const createAnimationExportPlan = (
         canvasBackgroundColor: settings.background
           ? app.state.viewBackgroundColor
           : false,
-        scale: settings.scale,
-        padding,
+        scale: settings.scale * fitScale,
+        padding: settings.size ? 0 : padding,
         // pin the crop to the union bounds across the whole animation
-        x: minX,
-        y: minY,
-        width: contentWidth,
-        height: contentHeight,
+        x: settings.size ? minX - (viewportWidth - contentWidth) / 2 : minX,
+        y: settings.size ? minY - (viewportHeight - contentHeight) / 2 : minY,
+        width: viewportWidth,
+        height: viewportHeight,
         fit: "none",
         position: "topLeft",
         origin: "canvas",
@@ -176,6 +231,23 @@ export const getAnimationFrameCount = (duration: number, fps: number) =>
 export const getFrameTime = (duration: number, fps: number, index: number) => {
   const count = getAnimationFrameCount(duration, fps);
   return (index / count) * duration;
+};
+
+/** The same bounded range drives preview and every export format. */
+export const getExportRange = (
+  duration: number,
+  settings: Pick<AnimationExportSettings, "startTime" | "endTime">,
+) => {
+  const minimum = Math.min(50, duration);
+  const start = Math.max(
+    0,
+    Math.min(settings.startTime ?? 0, duration - minimum),
+  );
+  const end = Math.max(
+    start + minimum,
+    Math.min(settings.endTime ?? duration, duration),
+  );
+  return { start, end, duration: end - start };
 };
 
 const videoTypes: Record<Exclude<AnimationFormat, "gif">, readonly string[]> = {
@@ -240,13 +312,14 @@ const renderGif = async ({
   signal?: AbortSignal;
 }) => {
   const ownerWindow = app.ownerWindow;
-  const frameCount = getAnimationFrameCount(plan.duration, settings.fps);
+  const range = getExportRange(plan.duration, settings);
+  const frameCount = getAnimationFrameCount(range.duration, settings.fps);
   let width = 0;
   let height = 0;
 
   const readFrame = async (index: number) => {
     const canvas = await plan.renderFrameAt(
-      getFrameTime(plan.duration, settings.fps, index),
+      range.start + getFrameTime(range.duration, settings.fps, index),
       settings,
     );
     width = canvas.width;
@@ -339,8 +412,9 @@ const renderVideo = async ({
     throw new Error(`${format.toUpperCase()} recording isn't supported`);
   }
 
-  const frameCount = getAnimationFrameCount(plan.duration, settings.fps);
-  const firstFrame = await plan.renderFrameAt(0, settings);
+  const range = getExportRange(plan.duration, settings);
+  const frameCount = getAnimationFrameCount(range.duration, settings.fps);
+  const firstFrame = await plan.renderFrameAt(range.start, settings);
   const canvas = app.ownerDocument.createElement("canvas");
   canvas.width = firstFrame.width;
   canvas.height = firstFrame.height;
@@ -397,7 +471,7 @@ const renderVideo = async ({
     for (let i = 1; i < frameCount; i++) {
       assertNotAborted(signal);
       const frame = await plan.renderFrameAt(
-        getFrameTime(plan.duration, settings.fps, i),
+        range.start + getFrameTime(range.duration, settings.fps, i),
         settings,
       );
       const wait = start + i * interval - ownerWindow.performance.now();
@@ -452,6 +526,12 @@ export const exportAnimation = async ({
   onProgress?: AnimationExportProgress;
   signal?: AbortSignal;
 }): Promise<AnimationExportResult> => {
+  if (settings.size) {
+    const error = getAnimationSizeError(settings.size, settings.format);
+    if (error) {
+      throw new Error(error);
+    }
+  }
   if (settings.format === "gif") {
     const bytes = await renderGif({
       app,

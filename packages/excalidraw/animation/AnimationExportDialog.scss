@@ -53,8 +53,10 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        max-width: 100%;
-        max-height: 320px;
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
 
         &:empty {
           display: none;
@@ -62,7 +64,8 @@
 
         & > canvas {
           max-width: 100%;
-          max-height: 320px;
+          max-height: 100%;
+          object-fit: contain;
           filter: none !important;
         }
       }
@@ -83,7 +86,11 @@
 
     &__side {
       display: flex;
-      flex: 1;
+      flex: 0 0 280px;
+
+      @include isMobile {
+        flex-basis: auto;
+      }
       flex-direction: column;
       gap: 1rem;
       min-width: 0;
@@ -166,6 +173,205 @@
       justify-content: flex-end;
       margin-top: auto;
       padding-top: 0.25rem;
+    }
+  }
+}
+
+.excalidraw .AnimationExportDialog {
+  &__main {
+    flex: 1 1 58%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__preview {
+    flex: none;
+    height: 300px;
+
+    @include isMobile {
+      height: 200px;
+    }
+  }
+
+  &__transport,
+  &__trim-label,
+  &__range-labels {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__transport button,
+  &__trim-label button {
+    padding: 6px 12px;
+    border: 1px solid var(--default-border-color);
+    border-radius: 6px;
+    background: var(--island-bg-color);
+    color: var(--text-primary-color);
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+  }
+
+  &__loop-hint {
+    opacity: 0.65;
+    margin-left: auto;
+  }
+
+  &__seek {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--color-primary);
+  }
+
+  &__trim {
+    position: relative;
+    height: 52px;
+    margin: 0 12px;
+    border-radius: 8px;
+    background: repeating-linear-gradient(
+        90deg,
+        var(--default-border-color) 0 1px,
+        transparent 1px 10%
+      ),
+      var(--color-surface-low);
+    box-shadow: inset 0 0 0 1px var(--default-border-color);
+    touch-action: none;
+    user-select: none;
+
+    &__window {
+      position: absolute;
+      inset-block: 0;
+      display: flex;
+      box-sizing: border-box;
+      border-block: 3px solid var(--color-primary);
+      border-radius: 5px;
+      background: var(--color-primary-light);
+    }
+
+    &__handle {
+      position: absolute;
+      inset-block: -3px;
+      width: 12px;
+      border-radius: 5px;
+      background: var(--color-primary);
+      cursor: ew-resize;
+      z-index: 2;
+
+      &:first-child {
+        left: -12px;
+      }
+      &:last-child {
+        right: -12px;
+      }
+      &::after {
+        content: "";
+        position: absolute;
+        top: 12px;
+        bottom: 12px;
+        left: 5px;
+        width: 2px;
+        border-radius: 2px;
+        background: white;
+      }
+    }
+
+    &__move {
+      flex: 1;
+      cursor: grab;
+      &:active {
+        cursor: grabbing;
+      }
+    }
+
+    [role="slider"]:focus-visible {
+      outline: 2px solid var(--text-primary-color);
+      outline-offset: 3px;
+    }
+
+    &__playhead {
+      position: absolute;
+      inset-block: 5px;
+      width: 2px;
+      background: var(--text-primary-color);
+      pointer-events: none;
+    }
+  }
+
+  &__settings {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  &__advanced {
+    summary {
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 8px 0;
+    }
+    .AnimationExportDialog__setting {
+      margin-top: 8px;
+    }
+  }
+}
+
+.excalidraw .AnimationExportDialog {
+  &__size {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-block: 8px;
+
+    > label {
+      font-weight: 600;
+    }
+
+    select,
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid var(--default-border-color);
+      border-radius: 6px;
+      background: var(--island-bg-color);
+      color: var(--text-primary-color);
+      font: inherit;
+      font-size: 0.85rem;
+    }
+  }
+
+  &__dimensions {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+
+    > span {
+      padding-bottom: 8px;
+    }
+    label {
+      flex: 1;
+      min-width: 0;
+      font-size: 0.8rem;
+      font-weight: 600;
+      span {
+        float: right;
+        opacity: 0.6;
+        font-weight: 400;
+      }
+      input {
+        margin-top: 4px;
+      }
     }
   }
 }
